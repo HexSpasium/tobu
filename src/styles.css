@@ -62,3 +62,23 @@
 .sale-number{min-width:48px;border-radius:7px;padding:7px 5px;text-align:center;background:#fff0f1;color:var(--red);font:800 10px Manrope}
 .sale-row>.branch-main{flex:1}
 .sale-row>strong{font:800 11px Manrope}
+
+.modal-backdrop{position:fixed;inset:0;background:rgba(20,23,28,.48);z-index:1000;display:flex;align-items:center;justify-content:center;padding:22px}
+.cancel-modal{width:min(680px,100%);max-height:88vh;overflow:auto;padding:24px;border-radius:16px;box-shadow:0 24px 70px rgba(0,0,0,.2)}
+.cancel-modal .section-head h2{font-size:20px;margin:6px 0}
+.cancel-items{border-top:1px solid #eceef1;margin:16px 0}
+.cancel-item{display:flex;align-items:center;gap:12px;padding:13px 0;border-bottom:1px solid #f0f1f3}
+.cancel-item .branch-main{flex:1;min-width:0}
+.cancel-item .branch-main b{font-size:11px}
+.cancel-item .branch-main small{font-size:9px}
+.cancel-item>strong{font:800 11px Manrope;white-space:nowrap}
+.cancel-actions{border-top:1px solid #eceef1;padding-top:16px;display:grid;gap:12px}
+.cancel-actions label{display:grid;gap:7px;font-size:10px;font-weight:700;color:#59616b}
+.cancel-actions input{width:100%;border:1px solid #e1e4e9;border-radius:9px;padding:11px 12px;font-size:11px;color:var(--ink)}
+.cancel-button-row{display:flex;gap:9px;flex-wrap:wrap;justify-content:flex-end}
+.cancelled-pill,.paid-pill{font-size:9px;font-weight:800;border-radius:20px;padding:6px 8px;white-space:nowrap}
+.cancelled-pill{background:#fff0f1;color:#c51f32}
+.paid-pill{background:#eaf8f0;color:#188451}
+.sale-cancelled{opacity:.78}
+.sale-cancelled>strong{text-decoration:line-through;color:#8e949d}
+@media(max-width:700px){.modal-backdrop{padding:10px}.cancel-modal{padding:16px}.cancel-item{align-items:flex-start;flex-wrap:wrap}.cancel-item .branch-main{min-width:45%}.cancel-button-row>*{flex:1}}
