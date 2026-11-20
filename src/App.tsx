@@ -64,6 +64,11 @@ export default function App() {
   const [editingBranch, setEditingBranch] = useState<Branch | null>(null);
   const [branchEditForm, setBranchEditForm] = useState({ city_id: '', branch_code: '', branch_name: '', address: '', phone: '', notes: '' });
   const [staffForm, setStaffForm] = useState({ username: '', password: '', display_name: '', role: 'cashier', branch_id: '' });
+  const [editingStaff, setEditingStaff] = useState<Staff | null>(null);
+  const [staffEditForm, setStaffEditForm] = useState({ username: '', password: '', display_name: '', role: 'cashier', branch_id: '', is_active: true });
+  const [passwordRequest, setPasswordRequest] = useState('');
+  const [passwordRequests, setPasswordRequests] = useState<any[]>([]);
+
 
   const isCentral = profile?.role === 'central_admin';
   const isBranchManager = profile?.role === 'branch_manager';
@@ -217,6 +222,62 @@ export default function App() {
     } finally {
       setBusy(false);
     }
+  }
+
+
+  function startStaffEdit(s: Staff) {
+    setEditingStaff(s);
+    setStaffEditForm({ username: s.username || '', password: '', display_name: s.display_name, role: s.role, branch_id: s.branch_id || '', is_active: s.is_active });
+  }
+
+  async function saveStaffEdit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!editingStaff) return;
+    setBusy(true); setError(''); setNotice('');
+    try {
+      const username = staffEditForm.username.trim().toLowerCase();
+      if (!/^[a-z0-9._-]{3,40}$/.test(username)) throw new Error('Kullanıcı adı 3-40 karakter olmalı ve yalnızca İngilizce harf, rakam, nokta, tire veya alt çizgi içermeli.');
+      if (staffEditForm.password && staffEditForm.password.length < 8) throw new Error('Yeni parola en az 8 karakter olmalı.');
+      const { data, error: invokeError } = await supabase.functions.invoke('create-branch-user', { body: {
+        action: 'update_user', user_id: editingStaff.user_id, username, display_name: staffEditForm.display_name.trim(),
+        role: staffEditForm.role, branch_id: staffEditForm.branch_id, is_active: staffEditForm.is_active,
+        password: staffEditForm.password || undefined
+      }});
+      if (invokeError) throw new Error(invokeError.message);
+      if (data?.error) throw new Error(data.error);
+      setNotice('Kullanıcı bilgileri güncellendi.'); setEditingStaff(null); await refresh();
+    } catch (err) { setError(err instanceof Error ? err.message : 'Kullanıcı güncellenemedi.'); }
+    finally { setBusy(false); }
+  }
+
+  async function submitPasswordRequest(e: React.FormEvent) {
+    e.preventDefault(); setBusy(true); setError(''); setNotice('');
+    try {
+      const { data, error: invokeError } = await supabase.functions.invoke('create-branch-user', { body: { action: 'password_request', message: passwordRequest.trim() }});
+      if (invokeError) throw new Error(invokeError.message);
+      if (data?.error) throw new Error(data.error);
+      setPasswordRequest(''); setNotice('Parola değişikliği talebiniz merkez yönetime iletildi.');
+    } catch (err) { setError(err instanceof Error ? err.message : 'Talep gönderilemedi.'); }
+    finally { setBusy(false); }
+  }
+
+  async function loadPasswordRequests() {
+    const { data, error: invokeError } = await supabase.functions.invoke('create-branch-user', { body: { action: 'list_password_requests' }});
+    if (invokeError) throw invokeError;
+    if (data?.error) throw new Error(data.error);
+    setPasswordRequests(data.requests || []);
+  }
+
+  async function resolvePasswordRequest(id: string, status: 'approved' | 'rejected') {
+    setBusy(true); setError(''); setNotice('');
+    try {
+      const { data, error: invokeError } = await supabase.functions.invoke('create-branch-user', { body: { action: 'resolve_password_request', request_id: id, status }});
+      if (invokeError) throw new Error(invokeError.message);
+      if (data?.error) throw new Error(data.error);
+      setNotice(status === 'approved' ? 'Talep sonuçlandırıldı. Kullanıcıyla parola belirleme işlemini tamamlayın.' : 'Talep reddedildi.');
+      await loadPasswordRequests();
+    } catch (err) { setError(err instanceof Error ? err.message : 'Talep sonuçlandırılamadı.'); }
+    finally { setBusy(false); }
   }
 
   async function createCategory(e: React.FormEvent) {
@@ -437,6 +498,7 @@ export default function App() {
       {(isCentral || isBranchManager) && <button className={'nav-link ' + (tab === 'menu' ? 'active' : '')} onClick={() => setTab('menu')}><PackagePlus size={18}/> Menü Yönetimi</button>}
       {isCentral && <button className={'nav-link ' + (tab === 'branches' ? 'active' : '')} onClick={() => setTab('branches')}><Building2 size={18}/> Şubeler</button>}
       {isCentral && <button className={'nav-link ' + (tab === 'staff' ? 'active' : '')} onClick={() => setTab('staff')}><Users size={18}/> Kullanıcılar</button>}
+      {!isCentral && <button className={'nav-link ' + (tab === 'staff' ? 'active' : '')} onClick={() => setTab('staff')}><ShieldCheck size={18}/> Parola Talebi</button>}
       <div className="sidebar-bottom">
         <div className="signed-user"><div className="user-avatar">{profile.display_name.slice(0,1).toLocaleUpperCase('tr')}</div><div><b>{profile.display_name}</b><small>{isCentral ? 'Merkez yönetim' : myBranch?.branch_name || 'Şube personeli'}</small></div></div>
         <button className="nav-link logout" onClick={logout}><LogOut size={17}/> Oturumu Kapat</button>
@@ -548,6 +610,7 @@ export default function App() {
             </div>
           </section>
         </div>}
+        {tab === 'staff' && !isCentral && <section className="surface"><div className="section-head"><div><h2>Parola değişikliği talebi</h2><p>Talebiniz yalnızca TOBU Merkez Yönetici tarafından değerlendirilir.</p></div></div><form className="stack-form" onSubmit={submitPasswordRequest}><label>Açıklama (isteğe bağlı)<textarea rows={3} value={passwordRequest} onChange={e=>setPasswordRequest(e.target.value)} placeholder="Parola yenileme talebinizi yazın"/></label><button className="btn primary" disabled={busy}>Merkez yönetime talep gönder</button></form></section>}
         {tab === 'staff' && isCentral && <div className="two-col">
           <section className="surface"><div className="section-head"><div><h2>Şube kullanıcısı oluştur</h2><p>Her çalışan için ayrı kullanıcı adı ve parola tanımlayın.</p></div></div>
             <form className="stack-form" onSubmit={createStaff} autoComplete="off">
@@ -561,7 +624,19 @@ export default function App() {
             <p className="form-note">Parolalar güvenli kimlik doğrulama sisteminde saklanır; veritabanında açık metin olarak tutulmaz.</p>
           </section>
           <section className="surface"><div className="section-head"><div><h2>Kullanıcı listesi</h2><p>{staff.length} personel hesabı.</p></div></div>
-            <div className="branch-list">{staff.map(s => <div className="branch-row" key={s.user_id}><div className="user-avatar small">{s.display_name.slice(0,1).toLocaleUpperCase('tr')}</div><div className="branch-main"><b>{s.display_name}</b><small>{s.username || 'Kullanıcı adı tanımlı değil'} • {branches.find(b => b.id === s.branch_id)?.branch_name || 'Merkez'}</small></div><span className={'status '+(s.is_active?'online':'disabled')}>{s.is_active?'Aktif':'Pasif'}</span></div>)}{!staff.length && <div className="empty">Henüz personel hesabı yok.</div>}</div>
+            {editingStaff && <form className="stack-form" onSubmit={saveStaffEdit}>
+              <div className="section-head"><div><h2>Kullanıcıyı düzenle</h2><p>{editingStaff.username} hesabının tüm yetkileri merkezden yönetilir.</p></div><button type="button" className="btn mini outline" onClick={() => setEditingStaff(null)}>Kapat</button></div>
+              <label>Ad soyad<input required value={staffEditForm.display_name} onChange={e=>setStaffEditForm({...staffEditForm,display_name:e.target.value})}/></label>
+              <label>Kullanıcı adı<input required minLength={3} maxLength={40} value={staffEditForm.username} onChange={e=>setStaffEditForm({...staffEditForm,username:e.target.value.replace(/\\s/g,'')})}/></label>
+              <label>Yeni parola (boş bırakılırsa değişmez)<input type="password" minLength={8} autoComplete="new-password" value={staffEditForm.password} onChange={e=>setStaffEditForm({...staffEditForm,password:e.target.value})} placeholder="En az 8 karakter"/></label>
+              <label>Şube<select required value={staffEditForm.branch_id} onChange={e=>setStaffEditForm({...staffEditForm,branch_id:e.target.value})}><option value="">Şube seçin</option>{branches.map(b=><option key={b.id} value={b.id}>{b.branch_name}</option>)}</select></label>
+              <label>Yetki<select value={staffEditForm.role} onChange={e=>setStaffEditForm({...staffEditForm,role:e.target.value})}><option value="cashier">Kasiyer</option><option value="branch_manager">Şube yöneticisi</option></select></label>
+              <label><input type="checkbox" checked={staffEditForm.is_active} onChange={e=>setStaffEditForm({...staffEditForm,is_active:e.target.checked})}/> Hesap aktif</label>
+              <button className="btn primary" disabled={busy}>Kullanıcıyı Kaydet</button>
+            </form>}
+            <div className="branch-list">{staff.map(s => <div className="branch-row" key={s.user_id}><div className="user-avatar small">{s.display_name.slice(0,1).toLocaleUpperCase('tr')}</div><div className="branch-main"><b>{s.display_name}</b><small>{s.username || 'Kullanıcı adı tanımlı değil'} • {branches.find(b => b.id === s.branch_id)?.branch_name || 'Merkez'} • {s.role === 'branch_manager' ? 'Şube yöneticisi' : 'Kasiyer'}</small></div><span className={'status '+(s.is_active?'online':'disabled')}>{s.is_active?'Aktif':'Pasif'}</span><button className="btn mini outline" onClick={()=>startStaffEdit(s)}>Düzenle</button></div>)}{!staff.length && <div className="empty">Henüz personel hesabı yok.</div>}</div>
+            <div className="section-head"><div><h2>Parola değişikliği talepleri</h2><p>Personellerin parola taleplerini merkezden yönetin.</p></div><button className="btn mini outline" onClick={loadPasswordRequests}>Talepleri Yenile</button></div>
+            <div className="branch-list">{passwordRequests.map(r=><div className="branch-row" key={r.id}><div className="branch-main"><b>{r.display_name} • {r.username}</b><small>{r.branch_name || 'Şube belirtilmemiş'} • {r.message || 'Parola değişikliği talebi'} • {new Date(r.created_at).toLocaleString('tr-TR')}</small></div><span className="status">{r.status}</span>{r.status==='pending' && <><button className="btn mini primary" disabled={busy} onClick={()=>resolvePasswordRequest(r.id,'approved')}>Onayla</button><button className="btn mini danger" disabled={busy} onClick={()=>resolvePasswordRequest(r.id,'rejected')}>Reddet</button></>}</div>)}{!passwordRequests.length && <div className="empty">Bekleyen talep yok. Listeyi yenileyin.</div>}</div>
           </section>
         </div>}
       </div>
