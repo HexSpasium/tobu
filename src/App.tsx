@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Activity, ArrowDownRight, ArrowUpRight, Building2, CheckCircle2, CircleAlert, Clock3, LogOut, MapPin, Plus, RefreshCw, ShieldCheck, Store, Users, Wifi, WifiOff } from 'lucide-react';
+import { Activity, ArrowDownRight, ArrowUpRight, Building2, CheckCircle2, CircleAlert, LogOut, MapPin, Plus, RefreshCw, ShieldCheck, Store, Users, Wifi, WifiOff } from 'lucide-react';
 import { supabase } from './lib/supabase';
 
 type Profile = { user_id: string; display_name: string; username: string | null; role: 'central_admin' | 'branch_manager' | 'cashier'; branch_id: string | null; is_active: boolean };
@@ -167,7 +167,7 @@ export default function App() {
       <div className="brand-lockup"><div className="tobu-logo">T</div><div><b>TOBU</b><small>MERKEZİ ŞUBE YÖNETİMİ</small></div></div>
       <div className="login-kicker">GÜVENLİ PERSONEL GİRİŞİ</div><h1>Hoş geldiniz.</h1><p>Şubenizin veya merkez yönetim hesabınızın bilgileriyle giriş yapın.</p>
       <form onSubmit={login}>
-        <label>Kullanıcı adı<input value={username} onChange={e => setUsername(e.target.value)} autoComplete="username" placeholder="Kullanıcı adınız" required /></label>
+        <label>E-posta veya şube kullanıcı adı<input value={username} onChange={e => setUsername(e.target.value)} autoComplete="username" placeholder="Merkez: e-posta • Şube: kullanıcı adı" required /></label>
         <label>Şifre<input type="password" value={password} onChange={e => setPassword(e.target.value)} autoComplete="current-password" placeholder="Şifreniz" required /></label>
         {error && <div className="alert error"><CircleAlert size={16}/>{error}</div>}
         <button className="btn primary full" disabled={busy}>{busy ? 'Giriş yapılıyor…' : 'Giriş Yap'} <span>→</span></button>
