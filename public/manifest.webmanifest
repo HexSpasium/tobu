@@ -5,9 +5,14 @@
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
-  "background_color": "#f5f6f8",
-  "theme_color": "#c51f32",
+  "background_color": "#101114",
+  "theme_color": "#c79a45",
   "icons": [
-    { "src": "/tobu.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+    {
+      "src": "/tobu.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
   ]
 }
