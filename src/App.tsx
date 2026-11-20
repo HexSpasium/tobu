@@ -14,7 +14,7 @@ type Category = { id: string; name: string; sort_order: number; is_active: boole
 type Product = { id: string; category_id: string | null; name: string; description: string | null; base_price: number; is_active: boolean; sort_order: number; owner_branch_id: string | null };
 type BranchProduct = { branch_id: string; product_id: string; is_available: boolean; sale_price: number | null; custom_name: string | null; custom_description: string | null };
 type CartLine = { product: Product; quantity: number };
-type Expense = { id: string; branch_id: string; category: string; description: string | null; amount: number; expense_date: string; entered_by: string | null; created_at: string };
+type Expense = { id: string; branch_id: string; category: string; description: string | null; amount: number; expense_date: string; entered_by: string | null; created_at: string; edited_at: string | null; edited_by: string | null };
 const money = (v: number) => new Intl.NumberFormat('tr-TR', { style: 'currency', currency: 'TRY', maximumFractionDigits: 0 }).format(v || 0);
 const dateKey = () => new Date().toLocaleDateString('en-CA');
 const deviceId = () => {
@@ -39,6 +39,8 @@ export default function App() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [expenseForm, setExpenseForm] = useState({ category: 'Satın alınan ürün', description: '', amount: '', expense_date: dateKey() });
+  const [editingExpenseId, setEditingExpenseId] = useState<string | null>(null);
+  const [expenseEditForm, setExpenseEditForm] = useState({ category: '', description: '', amount: '', expense_date: '' });
   const [cities, setCities] = useState<City[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
@@ -98,7 +100,7 @@ export default function App() {
       supabase.from('branch_presence').select('branch_id,status,last_seen_at').order('last_seen_at', { ascending: false }),
       supabase.from('staff_profiles').select('user_id,display_name,username,role,branch_id,is_active').order('display_name'),
       (() => { let q = supabase.from('orders').select('id,branch_id,order_number,order_type,table_number,total,status,payment_method,created_at,paid_at,cancelled_at,cancellation_reason').order('created_at', { ascending: false }).limit(500); if (branchFilter) q = q.eq('branch_id', branchFilter); return q; })(),
-      (() => { let q = supabase.from('expenses').select('id,branch_id,category,description,amount,expense_date,entered_by,created_at').order('expense_date', { ascending: false }).order('created_at', { ascending: false }).limit(1000); if (branchFilter) q = q.eq('branch_id', branchFilter); return q; })(),
+      (() => { let q = supabase.from('expenses').select('id,branch_id,category,description,amount,expense_date,entered_by,created_at,edited_at,edited_by').order('expense_date', { ascending: false }).order('created_at', { ascending: false }).limit(1000); if (branchFilter) q = q.eq('branch_id', branchFilter); return q; })(),
       supabase.from('categories').select('id,name,sort_order,is_active').eq('is_active', true).order('sort_order'),
       supabase.from('products').select('id,category_id,name,description,base_price,is_active,sort_order,owner_branch_id').order('sort_order').order('name'),
       (() => { let q = supabase.from('branch_products').select('branch_id,product_id,is_available,sale_price,custom_name,custom_description'); if (branchFilter) q = q.eq('branch_id', branchFilter); return q; })()
@@ -203,6 +205,35 @@ export default function App() {
     else {
       setNotice('Gider kaydı oluşturuldu ve gider listesine eklendi.');
       setExpenseForm({ category: 'Satın alınan ürün', description: '', amount: '', expense_date: dateKey() });
+      await refresh();
+    }
+    setBusy(false);
+  }
+
+  function startExpenseEdit(expense: Expense) {
+    setEditingExpenseId(expense.id);
+    setExpenseEditForm({ category: expense.category, description: expense.description || '', amount: String(expense.amount), expense_date: expense.expense_date });
+  }
+
+  async function saveExpenseEdit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!editingExpenseId || !isBranchManager || !profile?.branch_id) return;
+    const amount = Number(expenseEditForm.amount);
+    if (!expenseEditForm.description.trim() || !Number.isFinite(amount) || amount <= 0 || !expenseEditForm.expense_date) {
+      setError('Açıklama, tarih ve sıfırdan büyük tutar girin.'); return;
+    }
+    setBusy(true); setError(''); setNotice('');
+    const { data, error: updateError } = await supabase.from('expenses').update({
+      category: expenseEditForm.category,
+      description: expenseEditForm.description.trim(),
+      amount,
+      expense_date: expenseEditForm.expense_date
+    }).eq('id', editingExpenseId).eq('branch_id', profile.branch_id).select('id').maybeSingle();
+    if (updateError) setError(updateError.message);
+    else if (!data) setError('Gider kaydı bulunamadı veya düzenleme yetkiniz yok.');
+    else {
+      setEditingExpenseId(null);
+      setNotice('Gider güncellendi. Merkez yönetici bu kaydı sonradan düzenlendi olarak görecek.');
       await refresh();
     }
     setBusy(false);
@@ -669,8 +700,14 @@ export default function App() {
               <button className="btn primary" disabled={busy}><Plus size={16}/> Gideri Kaydet</button>
             </form>
           </section>}
+          {isBranchManager && editingExpenseId && <section className="surface expense-form-card"><div className="section-head"><div><h2>Gider kaydını düzenle</h2><p>Yapılan değişiklik merkez yönetim ekranında kırmızı uyarıyla işaretlenecek.</p></div><button type="button" className="btn mini outline" onClick={()=>setEditingExpenseId(null)}>Vazgeç</button></div><form className="stack-form expense-form" onSubmit={saveExpenseEdit}>
+            <label>Gider kategorisi<select value={expenseEditForm.category} onChange={e=>setExpenseEditForm({...expenseEditForm,category:e.target.value})}><option>Satın alınan ürün</option><option>Bakım onarım</option><option>Temizlik ve hijyen</option><option>Faturalar</option></select></label>
+            <label>Açıklama<input required maxLength={500} value={expenseEditForm.description} onChange={e=>setExpenseEditForm({...expenseEditForm,description:e.target.value})}/></label>
+            <div className="expense-fields"><label>Tutar (₺)<input required type="number" min="0.01" step="0.01" value={expenseEditForm.amount} onChange={e=>setExpenseEditForm({...expenseEditForm,amount:e.target.value})}/></label><label>Gider tarihi<input required type="date" value={expenseEditForm.expense_date} onChange={e=>setExpenseEditForm({...expenseEditForm,expense_date:e.target.value})}/></label></div>
+            <button className="btn primary" disabled={busy}>Değişiklikleri Kaydet</button>
+          </form></section>}
           <section className="surface expense-list-card"><div className="section-head"><div><h2>{isCentral ? 'Tüm şube giderleri' : 'Kaydedilen giderler'}</h2><p>{expenses.length} kayıt • Toplam {money(expenses.reduce((sum,x)=>sum+Number(x.amount),0))}</p></div><button className="btn mini outline" onClick={refresh}><RefreshCw size={14}/> Yenile</button></div>
-            {expenses.length ? <div className="expense-list">{expenses.map(expense=>{const branch=branches.find(b=>b.id===expense.branch_id);return <article className="expense-row" key={expense.id}><div className="expense-icon"><Receipt size={17}/></div><div className="expense-main"><b>{expense.category}</b><p>{expense.description || 'Açıklama girilmemiş'}</p><small>{branch?.branch_name || 'Şube'} • {new Date(expense.expense_date+'T12:00:00').toLocaleDateString('tr-TR')} • Kayıt: {new Date(expense.created_at).toLocaleTimeString('tr-TR',{hour:'2-digit',minute:'2-digit'})}</small></div><strong>{money(Number(expense.amount))}</strong></article>})}</div> : <div className="empty">Henüz gider kaydı bulunmuyor.</div>}
+            {expenses.length ? <div className="expense-list">{expenses.map(expense=>{const branch=branches.find(b=>b.id===expense.branch_id);return <article className="expense-row" key={expense.id}><div className="expense-icon"><Receipt size={17}/></div><div className="expense-main"><b>{expense.category}</b><p>{expense.description || 'Açıklama girilmemiş'}</p><small>{branch?.branch_name || 'Şube'} • {new Date(expense.expense_date+'T12:00:00').toLocaleDateString('tr-TR')} • Kayıt: {new Date(expense.created_at).toLocaleString('tr-TR')}</small>{expense.edited_at && <div className="expense-edited-label">Sonradan düzenlendi • {new Date(expense.edited_at).toLocaleString('tr-TR')}</div>}</div><strong>{money(Number(expense.amount))}</strong>{isBranchManager && <button type="button" className="btn mini outline" onClick={()=>startExpenseEdit(expense)}>Düzenle</button>}</article>})}</div> : <div className="empty">Henüz gider kaydı bulunmuyor.</div>}
           </section>
         </div>}
         {tab === 'staff' && !isCentral && <section className="surface"><div className="section-head"><div><h2>Parola değişikliği talebi</h2><p>Talebiniz yalnızca TOBU Merkez Yönetici tarafından değerlendirilir.</p></div></div><form className="stack-form" onSubmit={submitPasswordRequest}><label>Açıklama (isteğe bağlı)<textarea rows={3} value={passwordRequest} onChange={e=>setPasswordRequest(e.target.value)} placeholder="Parola yenileme talebinizi yazın"/></label><button className="btn primary" disabled={busy}>Merkez yönetime talep gönder</button></form></section>}
