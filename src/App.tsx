@@ -7,7 +7,8 @@ type City = { id: number; name: string; plate_code: number };
 type Branch = { id: string; city_id: number; branch_code: string; branch_name: string; is_enabled: boolean; address: string | null; cities?: City };
 type Presence = { branch_id: string; status: string; last_seen_at: string };
 type Staff = { user_id: string; display_name: string; username: string | null; role: string; branch_id: string | null; is_active: boolean };
-type Order = { id: string; branch_id: string; order_number: number; order_type: string; table_number: number | null; total: number; status: string; payment_method: string | null; created_at: string; paid_at: string | null };
+type Order = { id: string; branch_id: string; order_number: number; order_type: string; table_number: number | null; total: number; status: string; payment_method: string | null; created_at: string; paid_at: string | null; cancelled_at: string | null; cancellation_reason: string | null };
+type OrderItem = { id: string; product_name: string; quantity: number; cancelled_quantity: number; unit_price: number; line_total: number };
 type Category = { id: string; name: string; sort_order: number; is_active: boolean };
 type Product = { id: string; category_id: string | null; name: string; description: string | null; base_price: number; is_active: boolean; sort_order: number };
 type BranchProduct = { branch_id: string; product_id: string; is_available: boolean; sale_price: number | null };
@@ -50,12 +51,18 @@ export default function App() {
   const [saleNote, setSaleNote] = useState('');
   const [categoryName, setCategoryName] = useState('');
   const [productForm, setProductForm] = useState({ name: '', category_id: '', base_price: '', description: '' });
+  const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
+  const [selectedItems, setSelectedItems] = useState<OrderItem[]>([]);
+  const [cancelReason, setCancelReason] = useState('');
+  const [cancelItemId, setCancelItemId] = useState('');
+  const [cancelQuantity, setCancelQuantity] = useState('1');
   const [branchForm, setBranchForm] = useState({ city_id: '', branch_code: '', branch_name: '', address: '' });
   const [staffForm, setStaffForm] = useState({ username: '', password: '', display_name: '', role: 'cashier', branch_id: '' });
 
   const isCentral = profile?.role === 'central_admin';
   const myBranch = branches.find(b => b.id === profile?.branch_id);
-  const todayOrders = orders.filter(o => o.status === 'paid' && (o.paid_at || o.created_at).slice(0, 10) === dateKey());
+  const todayOrderHistory = orders.filter(o => ['paid','cancelled'].includes(o.status) && (o.paid_at || o.created_at).slice(0, 10) === dateKey());
+  const todayOrders = todayOrderHistory.filter(o => o.status === 'paid');
   const activePosBranch = isCentral ? branches.find(b => b.id === posBranchId) : myBranch;
   const posBranchProducts = branchProducts.filter(x => x.branch_id === activePosBranch?.id);
   const visibleProducts = products.filter(p => p.is_active && (posCategory === 'all' || p.category_id === posCategory) && p.name.toLocaleLowerCase('tr').includes(posSearch.toLocaleLowerCase('tr')) && (!posBranchProducts.some(x => x.product_id === p.id) || posBranchProducts.find(x => x.product_id === p.id)?.is_available !== false));
@@ -76,7 +83,7 @@ export default function App() {
       supabase.from('cities').select('id,name,plate_code').order('plate_code'),
       supabase.from('branch_presence').select('branch_id,status,last_seen_at').order('last_seen_at', { ascending: false }),
       supabase.from('staff_profiles').select('user_id,display_name,username,role,branch_id,is_active').order('display_name'),
-      (() => { let q = supabase.from('orders').select('id,branch_id,order_number,order_type,table_number,total,status,payment_method,created_at,paid_at').order('created_at', { ascending: false }).limit(500); if (branchFilter) q = q.eq('branch_id', branchFilter); return q; })(),
+      (() => { let q = supabase.from('orders').select('id,branch_id,order_number,order_type,table_number,total,status,payment_method,created_at,paid_at,cancelled_at,cancellation_reason').order('created_at', { ascending: false }).limit(500); if (branchFilter) q = q.eq('branch_id', branchFilter); return q; })(),
       (() => { let q = supabase.from('expenses').select('branch_id,amount,expense_date').order('expense_date', { ascending: false }).limit(500); if (branchFilter) q = q.eq('branch_id', branchFilter); return q; })(),
       supabase.from('categories').select('id,name,sort_order,is_active').eq('is_active', true).order('sort_order'),
       supabase.from('products').select('id,category_id,name,description,base_price,is_active,sort_order').order('sort_order').order('name'),
