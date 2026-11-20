@@ -144,3 +144,7 @@
 .expense-edited-label{color:#c51f32;font-size:10px;font-weight:800;margin-top:7px}
 .expense-row>.btn{flex-shrink:0}
 @media(max-width:700px){.expense-row>.btn{margin-left:51px}}
+
+.expense-cancelled-label{color:#c51f32;font-size:10px;font-weight:850;margin-top:6px;letter-spacing:.2px}
+.expense-amount-cancelled{text-decoration:line-through;color:#9299a2!important}
+.expense-row:has(.expense-cancelled-label){background:#fffafa}
