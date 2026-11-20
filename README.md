@@ -1,32 +1,46 @@
-# TOBU Çiğ Köfte — Sipariş ve Masa Yönetimi
+# TOBU POS
 
-TOBU için web arayüzü ve Windows masaüstü uygulaması olarak çalışacak satış/sipariş yönetim sistemi.
+TOBU merkezi sipariş, satış ve şube yönetim platformu.
 
-## Teknoloji yaklaşımı
-- React + TypeScript + Vite: ortak web arayüzü
-- Electron: Windows masaüstü paketi
-- İlk prototip: tarayıcı yerel depolaması (LocalStorage)
-- Sonraki aşama: merkezi veritabanı, kullanıcı/rol yönetimi ve cihazlar arası senkronizasyon
+## Platform paketleri
+- **Web:** Vercel üzerinde çalışan ortak React/Vite uygulaması.
+- **Windows:** Electron ile kurulum sihirbazlı NSIS `.exe`; x64 ve ARM64 paketleri.
+- **Android:** Capacitor tabanlı Android uygulaması; CI üzerinden APK üretimi.
+- **Ortak marka:** `public/tobu.svg` Windows ve Android ikonlarının tek kaynak tasarımıdır.
 
-## Modüller
-- Yönetici girişi
-- Masa yönetimi (masa ekleme/çıkarma)
-- Masaya sipariş ekleme ve sepet yönetimi
-- Ayaküstü satış
-- Kategori ve ürün yönetimi
-- Ödeme, satış geçmişi ve günlük/aylık raporlar
-- Takvim bazlı geçmiş kayıtlar
-
-## Geliştirme
+## Yerel geliştirme
 ```bash
 npm install
 npm run dev
 ```
 
-## Windows
+## Windows kurulum paketi
+Windows üzerinde:
 ```bash
-npm run desktop:dev
-npm run desktop:build
+npm install
+npm run build
+node scripts/generate-icons.mjs
+npx electron-builder --win nsis --x64
 ```
+ARM64 için `--arm64` kullanın. Kurulum dosyası `release/` klasörüne çıkar.
 
-> Güvenlik notu: İlk prototipteki yerel yönetici hesabı yalnızca geliştirme amaçlıdır. Gerçek işletme kullanımından önce sunucu taraflı kimlik doğrulama, güvenli parola saklama, veritabanı yedeklemesi ve yetkilendirme kurulmalıdır.
+## Android APK
+Android Studio, Android SDK ve JDK 21 kurulu ortamda:
+```bash
+npm install
+npm run build
+node scripts/generate-icons.mjs
+npx cap add android
+npx cap sync android
+npx capacitor-assets generate --android
+cd android
+./gradlew assembleDebug
+```
+APK: `android/app/build/outputs/apk/debug/app-debug.apk`
+
+## GitHub Actions
+Actions sekmesinden **Build TOBU Windows Installer** ve **Build TOBU Android APK** iş akışlarını çalıştırın. Oluşan kurulum dosyaları ve APK, ilgili çalıştırmanın **Artifacts** bölümünde indirmeye hazır olur.
+
+Windows paketi Windows 10/11 x64 ve ARM64 hedeflidir. Android APK Android 7.0+ cihazları hedefleyen Capacitor/Android WebView tabanlıdır.
+
+> İlk Android paketi debug imzalı APK olarak üretilir. Play Store veya kurumsal dağıtım için ayrıca release keystore ile imzalama yapılandırılmalıdır.
