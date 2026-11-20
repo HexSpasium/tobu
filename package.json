@@ -9,14 +9,17 @@
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "desktop:dev": "concurrently -k \"npm:dev -- --host 127.0.0.1\" \"wait-on http://127.0.0.1:5173 && electron .\"",
-    "desktop:build": "npm run build && electron-builder --win",
-    "typecheck": "tsc -b --pretty"
+    "desktop:build": "npm run build && electron-builder --win nsis",
+    "typecheck": "tsc -b --pretty",
+    "android:sync": "npm run build && cap sync android",
+    "android:open": "cap open android"
   },
   "dependencies": {
     "lucide-react": "^0.468.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "@supabase/supabase-js": "^2.57.0"
+    "@supabase/supabase-js": "^2.57.0",
+    "@capacitor/core": "^7.4.3"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
@@ -28,7 +31,10 @@
     "electron-builder": "^25.1.8",
     "typescript": "~5.7.2",
     "vite": "^6.0.7",
-    "wait-on": "^8.0.1"
+    "wait-on": "^8.0.1",
+    "@capacitor/cli": "^7.4.3",
+    "sharp": "^0.34.3",
+    "png-to-ico": "^2.1.8"
   },
   "build": {
     "appId": "com.tobu.pos",
@@ -43,9 +49,15 @@
     ],
     "win": {
       "target": [
-        "nsis"
+        {
+          "target": "nsis",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
       ],
-      "icon": "public/tobu.ico"
+      "icon": "build/tobu.ico"
     },
     "nsis": {
       "oneClick": false,
