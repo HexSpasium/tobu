@@ -11,8 +11,8 @@ type Order = { id: string; branch_id: string; order_number: number; order_type: 
 type OrderItem = { id: string; product_name: string; quantity: number; cancelled_quantity: number; unit_price: number; line_total: number };
 type OrderCancellation = { id: string; action_type: string; product_name: string | null; quantity: number | null; amount: number; reason: string; created_at: string };
 type Category = { id: string; name: string; sort_order: number; is_active: boolean };
-type Product = { id: string; category_id: string | null; name: string; description: string | null; base_price: number; is_active: boolean; sort_order: number };
-type BranchProduct = { branch_id: string; product_id: string; is_available: boolean; sale_price: number | null };
+type Product = { id: string; category_id: string | null; name: string; description: string | null; base_price: number; is_active: boolean; sort_order: number; owner_branch_id: string | null };
+type BranchProduct = { branch_id: string; product_id: string; is_available: boolean; sale_price: number | null; custom_name: string | null; custom_description: string | null };
 type CartLine = { product: Product; quantity: number };
 type Expense = { branch_id: string; amount: number; expense_date: string };
 const money = (v: number) => new Intl.NumberFormat('tr-TR', { style: 'currency', currency: 'TRY', maximumFractionDigits: 0 }).format(v || 0);
@@ -52,6 +52,8 @@ export default function App() {
   const [saleNote, setSaleNote] = useState('');
   const [categoryName, setCategoryName] = useState('');
   const [productForm, setProductForm] = useState({ name: '', category_id: '', base_price: '', description: '' });
+  const [branchMenuForm, setBranchMenuForm] = useState({ name: '', category_id: '', base_price: '', description: '' });
+  const [editingBranchProduct, setEditingBranchProduct] = useState<Product | null>(null);
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [selectedItems, setSelectedItems] = useState<OrderItem[]>([]);
   const [selectedCancellations, setSelectedCancellations] = useState<OrderCancellation[]>([]);
@@ -64,12 +66,13 @@ export default function App() {
   const [staffForm, setStaffForm] = useState({ username: '', password: '', display_name: '', role: 'cashier', branch_id: '' });
 
   const isCentral = profile?.role === 'central_admin';
+  const isBranchManager = profile?.role === 'branch_manager';
   const myBranch = branches.find(b => b.id === profile?.branch_id);
   const todayOrderHistory = orders.filter(o => ['paid','cancelled'].includes(o.status) && (o.paid_at || o.created_at).slice(0, 10) === dateKey());
   const todayOrders = todayOrderHistory.filter(o => o.status === 'paid');
   const activePosBranch = isCentral ? branches.find(b => b.id === posBranchId) : myBranch;
   const posBranchProducts = branchProducts.filter(x => x.branch_id === activePosBranch?.id);
-  const visibleProducts = products.filter(p => p.is_active && (posCategory === 'all' || p.category_id === posCategory) && p.name.toLocaleLowerCase('tr').includes(posSearch.toLocaleLowerCase('tr')) && (!posBranchProducts.some(x => x.product_id === p.id) || posBranchProducts.find(x => x.product_id === p.id)?.is_available !== false));
+  const visibleProducts = products.filter(p => p.is_active && (!p.owner_branch_id || p.owner_branch_id === activePosBranch?.id) && (posCategory === 'all' || p.category_id === posCategory) && (posBranchProducts.find(x => x.product_id === p.id)?.custom_name || p.name).toLocaleLowerCase('tr').includes(posSearch.toLocaleLowerCase('tr')) && (!posBranchProducts.some(x => x.product_id === p.id) || posBranchProducts.find(x => x.product_id === p.id)?.is_available !== false));
   const cartTotal = cart.reduce((sum, line) => sum + line.quantity * Number(posBranchProducts.find(x => x.product_id === line.product.id)?.sale_price ?? line.product.base_price), 0);
   const todayRevenue = todayOrders.reduce((sum, o) => sum + Number(o.total), 0);
   const todayExpenses = expenses.filter(e => e.expense_date === dateKey()).reduce((sum, e) => sum + Number(e.amount), 0);
@@ -90,8 +93,8 @@ export default function App() {
       (() => { let q = supabase.from('orders').select('id,branch_id,order_number,order_type,table_number,total,status,payment_method,created_at,paid_at,cancelled_at,cancellation_reason').order('created_at', { ascending: false }).limit(500); if (branchFilter) q = q.eq('branch_id', branchFilter); return q; })(),
       (() => { let q = supabase.from('expenses').select('branch_id,amount,expense_date').order('expense_date', { ascending: false }).limit(500); if (branchFilter) q = q.eq('branch_id', branchFilter); return q; })(),
       supabase.from('categories').select('id,name,sort_order,is_active').eq('is_active', true).order('sort_order'),
-      supabase.from('products').select('id,category_id,name,description,base_price,is_active,sort_order').order('sort_order').order('name'),
-      (() => { let q = supabase.from('branch_products').select('branch_id,product_id,is_available,sale_price'); if (branchFilter) q = q.eq('branch_id', branchFilter); return q; })()
+      supabase.from('products').select('id,category_id,name,description,base_price,is_active,sort_order,owner_branch_id').order('sort_order').order('name'),
+      (() => { let q = supabase.from('branch_products').select('branch_id,product_id,is_available,sale_price,custom_name,custom_description'); if (branchFilter) q = q.eq('branch_id', branchFilter); return q; })()
     ]);
     const firstError = b.error || c.error || pr.error || st.error || o.error || ex.error || cats.error || prods.error || bp.error;
     if (firstError) throw firstError;
@@ -229,7 +232,7 @@ export default function App() {
     e.preventDefault(); setBusy(true); setError(''); setNotice('');
     const price = Number(productForm.base_price);
     if (!productForm.name.trim() || !Number.isFinite(price) || price < 0) { setError('Ürün adı ve geçerli bir fiyat girin.'); setBusy(false); return; }
-    const { error: e2 } = await supabase.from('products').insert({ name: productForm.name.trim(), category_id: productForm.category_id || null, base_price: price, description: productForm.description.trim() || null, sort_order: products.length, is_active: true });
+    const { error: e2 } = await supabase.from('products').insert({ name: productForm.name.trim(), category_id: productForm.category_id || null, base_price: price, description: productForm.description.trim() || null, sort_order: products.length, is_active: true, owner_branch_id: null });
     if (e2) setError(e2.message); else { setNotice('Ürün menüye eklendi.'); setProductForm({ name: '', category_id: '', base_price: '', description: '' }); await refresh(); }
     setBusy(false);
   }
@@ -276,6 +279,91 @@ export default function App() {
     const { error: e } = await supabase.rpc('tobu_cancel_order_item', { p_order_item_id: cancelItemId, p_quantity: qty, p_reason: cancelReason.trim() });
     if (e) setError(e.message); else { setNotice('Seçilen ürün miktarı iptal edildi.'); setSelectedOrder(null); await refresh(); }
     setBusy(false);
+  }
+
+  async function saveBranchMenuProduct(e: React.FormEvent) {
+    e.preventDefault();
+    if (!profile?.branch_id) return;
+    const price = Number(branchMenuForm.base_price);
+    if (!branchMenuForm.name.trim() || !Number.isFinite(price) || price < 0) {
+      setError('Ürün adı ve geçerli bir fiyat girin.'); return;
+    }
+    setBusy(true); setError(''); setNotice('');
+    if (editingBranchProduct) {
+      const { error: saveError } = await supabase.from('branch_products').upsert({
+        branch_id: profile.branch_id,
+        product_id: editingBranchProduct.id,
+        is_available: true,
+        sale_price: price,
+        custom_name: branchMenuForm.name.trim(),
+        custom_description: branchMenuForm.description.trim() || null
+      }, { onConflict: 'branch_id,product_id' });
+      if (saveError) setError(saveError.message);
+      else {
+        setNotice('Ürün bilgileri yalnızca bu şube için güncellendi.');
+        setEditingBranchProduct(null);
+        setBranchMenuForm({ name: '', category_id: '', base_price: '', description: '' });
+        await refresh();
+      }
+    } else {
+      const { data: created, error: createError } = await supabase.from('products').insert({
+        name: branchMenuForm.name.trim(),
+        category_id: branchMenuForm.category_id || null,
+        base_price: price,
+        description: branchMenuForm.description.trim() || null,
+        sort_order: products.length,
+        is_active: true,
+        owner_branch_id: profile.branch_id
+      }).select('id').single();
+      if (createError) setError(createError.message);
+      else {
+        const { error: linkError } = await supabase.from('branch_products').upsert({
+          branch_id: profile.branch_id,
+          product_id: created.id,
+          is_available: true,
+          sale_price: price,
+          custom_name: branchMenuForm.name.trim(),
+          custom_description: branchMenuForm.description.trim() || null
+        }, { onConflict: 'branch_id,product_id' });
+        if (linkError) {
+          await supabase.from('products').delete().eq('id', created.id);
+          setError(linkError.message);
+        } else {
+          setNotice('Ürün bu şubenin menüsüne eklendi.');
+          setBranchMenuForm({ name: '', category_id: '', base_price: '', description: '' });
+          await refresh();
+        }
+      }
+    }
+    setBusy(false);
+  }
+
+  function startBranchMenuEdit(product: Product) {
+    const override = branchProducts.find(x => x.branch_id === profile?.branch_id && x.product_id === product.id);
+    setEditingBranchProduct(product);
+    setBranchMenuForm({
+      name: override?.custom_name || product.name,
+      category_id: product.category_id || '',
+      base_price: String(override?.sale_price ?? product.base_price),
+      description: override?.custom_description ?? product.description ?? ''
+    });
+    setError(''); setNotice('');
+  }
+
+  async function toggleBranchMenuProduct(product: Product) {
+    if (!profile?.branch_id) return;
+    const current = branchProducts.find(x => x.branch_id === profile.branch_id && x.product_id === product.id);
+    const nextAvailable = current ? !current.is_available : false;
+    const { error: toggleError } = await supabase.from('branch_products').upsert({
+      branch_id: profile.branch_id,
+      product_id: product.id,
+      is_available: nextAvailable,
+      sale_price: current?.sale_price ?? null,
+      custom_name: current?.custom_name ?? null,
+      custom_description: current?.custom_description ?? null
+    }, { onConflict: 'branch_id,product_id' });
+    if (toggleError) setError(toggleError.message);
+    else { setNotice(nextAvailable ? 'Ürün şube menüsünde yeniden açıldı.' : 'Ürün bu şubenin menüsünden kaldırıldı.'); await refresh(); }
   }
 
   async function toggleProduct(product: Product) {
@@ -346,7 +434,7 @@ export default function App() {
       <div className="nav-caption">YÖNETİM</div>
       <button className={'nav-link ' + (tab === 'overview' ? 'active' : '')} onClick={() => setTab('overview')}><Activity size={18}/> Genel Bakış</button>
       <button className={'nav-link ' + (tab === 'pos' ? 'active' : '')} onClick={() => setTab('pos')}><ShoppingCart size={18}/> POS / Satış</button>
-      {isCentral && <button className={'nav-link ' + (tab === 'menu' ? 'active' : '')} onClick={() => setTab('menu')}><PackagePlus size={18}/> Menü Yönetimi</button>}
+      {(isCentral || isBranchManager) && <button className={'nav-link ' + (tab === 'menu' ? 'active' : '')} onClick={() => setTab('menu')}><PackagePlus size={18}/> Menü Yönetimi</button>}
       {isCentral && <button className={'nav-link ' + (tab === 'branches' ? 'active' : '')} onClick={() => setTab('branches')}><Building2 size={18}/> Şubeler</button>}
       {isCentral && <button className={'nav-link ' + (tab === 'staff' ? 'active' : '')} onClick={() => setTab('staff')}><Users size={18}/> Kullanıcılar</button>}
       <div className="sidebar-bottom">
@@ -430,6 +518,35 @@ export default function App() {
           <section className="surface"><div className="section-head"><div><h2>Menü kategorisi ekle</h2><p>Ürünleri kategorilere ayırın.</p></div></div><form className="stack-form" onSubmit={createCategory}><label>Kategori adı<input required value={categoryName} onChange={e => setCategoryName(e.target.value)} placeholder="Örn. İçecekler"/></label><button className="btn primary" disabled={busy}><Plus size={16}/> Kategori ekle</button></form><div className="category-admin-list">{categories.map(cat => <span key={cat.id}>{cat.name}</span>)}</div></section>
           <section className="surface"><div className="section-head"><div><h2>Menü ürünü ekle</h2><p>Ürün fiyatı merkez menü fiyatıdır; şube özel fiyatı sonraki aşamada tanımlanabilir.</p></div></div><form className="stack-form" onSubmit={createProduct}><label>Ürün adı<input required value={productForm.name} onChange={e => setProductForm({...productForm,name:e.target.value})} placeholder="Ürün adı"/></label><label>Kategori<select value={productForm.category_id} onChange={e => setProductForm({...productForm,category_id:e.target.value})}><option value="">Kategorisiz</option>{categories.map(cat => <option key={cat.id} value={cat.id}>{cat.name}</option>)}</select></label><label>Satış fiyatı (₺)<input required type="number" min="0" step="0.01" value={productForm.base_price} onChange={e => setProductForm({...productForm,base_price:e.target.value})} placeholder="0,00"/></label><label>Açıklama<input value={productForm.description} onChange={e => setProductForm({...productForm,description:e.target.value})} placeholder="İsteğe bağlı"/></label><button className="btn primary" disabled={busy}><Plus size={16}/> Ürünü kaydet</button></form></section>
           <section className="surface menu-product-list"><div className="section-head"><div><h2>Kayıtlı ürünler</h2><p>{products.length} ürün</p></div></div>{products.map(p => <div className="branch-row" key={p.id}><div className="branch-symbol"><Receipt size={17}/></div><div className="branch-main"><b>{p.name}</b><small>{categories.find(c=>c.id===p.category_id)?.name || 'Kategorisiz'} • {money(Number(p.base_price))}</small></div><button className={'btn mini '+(p.is_active?'danger':'outline')} onClick={()=>toggleProduct(p)}>{p.is_active?'Satışa kapat':'Yeniden aç'}</button></div>)}{!products.length && <div className="empty">Henüz ürün eklenmemiş.</div>}</section>
+        </div>}
+        {tab === 'menu' && isBranchManager && myBranch && <div className="two-col menu-layout">
+          <section className="surface">
+            <div className="section-head"><div><h2>{editingBranchProduct ? 'Menü ürününü düzenle' : 'Şubeye ürün ekle'}</h2><p>{myBranch.branch_name} menüsündeki değişiklikler diğer şubeleri etkilemez.</p></div></div>
+            <form className="stack-form" onSubmit={saveBranchMenuProduct}>
+              <label>Ürün adı<input required value={branchMenuForm.name} onChange={e => setBranchMenuForm({ ...branchMenuForm, name: e.target.value })} placeholder="Ürün adı"/></label>
+              <label>Kategori<select value={branchMenuForm.category_id} onChange={e => setBranchMenuForm({ ...branchMenuForm, category_id: e.target.value })}><option value="">Kategorisiz</option>{categories.map(cat => <option key={cat.id} value={cat.id}>{cat.name}</option>)}</select></label>
+              <label>Satış fiyatı (₺)<input required type="number" min="0" step="0.01" value={branchMenuForm.base_price} onChange={e => setBranchMenuForm({ ...branchMenuForm, base_price: e.target.value })} placeholder="0,00"/></label>
+              <label>Açıklama<textarea rows={3} value={branchMenuForm.description} onChange={e => setBranchMenuForm({ ...branchMenuForm, description: e.target.value })} placeholder="Ürün açıklaması"/></label>
+              <button className="btn primary" disabled={busy}><Plus size={16}/>{editingBranchProduct ? 'Değişiklikleri kaydet' : 'Şubeye ürünü ekle'}</button>
+              {editingBranchProduct && <button type="button" className="btn outline" onClick={() => { setEditingBranchProduct(null); setBranchMenuForm({ name: '', category_id: '', base_price: '', description: '' }); }}>Düzenlemeyi iptal et</button>}
+            </form>
+          </section>
+          <section className="surface">
+            <div className="section-head"><div><h2>{myBranch.branch_name} menüsü</h2><p>Merkez kataloğundaki ürünleri şubeye dahil edebilir veya kaldırabilirsiniz. Fiyat ve açıklama düzenlemeleri bu şubeye özeldir.</p></div></div>
+            <div className="branch-list">
+              {products.filter(p => p.is_active && (!p.owner_branch_id || p.owner_branch_id === myBranch.id)).map(product => {
+                const row = branchProducts.find(x => x.branch_id === myBranch.id && x.product_id === product.id);
+                const enabled = row ? row.is_available : true;
+                return <div className="branch-row branch-row-wrap" key={product.id}>
+                  <div className="branch-symbol"><Receipt size={17}/></div>
+                  <div className="branch-main"><b>{row?.custom_name || product.name}</b><small>{categories.find(c => c.id === product.category_id)?.name || 'Kategorisiz'} • {money(Number(row?.sale_price ?? product.base_price))}</small><small>{row?.custom_description ?? product.description ?? 'Açıklama bulunmuyor'}</small></div>
+                  <button className="btn mini outline" onClick={() => startBranchMenuEdit(product)}>Düzenle</button>
+                  <button className={'btn mini ' + (enabled ? 'danger' : 'outline')} onClick={() => toggleBranchMenuProduct(product)}>{enabled ? 'Menüden kaldır' : 'Menüye ekle'}</button>
+                </div>;
+              })}
+              {!products.some(p => p.is_active && (!p.owner_branch_id || p.owner_branch_id === myBranch.id)) && <div className="empty">Henüz ürün bulunmuyor.</div>}
+            </div>
+          </section>
         </div>}
         {tab === 'staff' && isCentral && <div className="two-col">
           <section className="surface"><div className="section-head"><div><h2>Şube kullanıcısı oluştur</h2><p>Her çalışan için ayrı kullanıcı adı ve parola tanımlayın.</p></div></div>
