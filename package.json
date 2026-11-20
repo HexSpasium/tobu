@@ -12,7 +12,8 @@
     "desktop:build": "npm run build && electron-builder --win nsis",
     "typecheck": "tsc -b --pretty",
     "android:sync": "npm run build && cap sync android",
-    "android:open": "cap open android"
+    "android:open": "cap open android",
+    "icons:generate": "node scripts/generate-icons.mjs"
   },
   "dependencies": {
     "lucide-react": "^0.468.0",
@@ -34,7 +35,8 @@
     "wait-on": "^8.0.1",
     "@capacitor/cli": "^7.4.3",
     "sharp": "^0.34.3",
-    "png-to-ico": "^2.1.8"
+    "png-to-ico": "^2.1.8",
+    "@capacitor/assets": "^3.0.5"
   },
   "build": {
     "appId": "com.tobu.pos",
