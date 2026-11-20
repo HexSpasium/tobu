@@ -66,7 +66,16 @@
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
-      "createStartMenuShortcut": true
-    }
+      "createStartMenuShortcut": true,
+      "installerIcon": "build/tobu.ico",
+      "uninstallerIcon": "build/tobu.ico",
+      "installerHeaderIcon": "build/tobu.ico"
+    },
+    "extraResources": [
+      {
+        "from": "build/tobu.ico",
+        "to": "tobu.ico"
+      }
+    ]
   }
 }
