@@ -147,12 +147,33 @@ export default function App() {
 
   async function createStaff(e: React.FormEvent) {
     e.preventDefault(); setBusy(true); setError(''); setNotice('');
-    const { data, error: e2 } = await supabase.functions.invoke('create-branch-user', {
-      body: { username: staffForm.username.trim().toLowerCase(), password: staffForm.password, display_name: staffForm.display_name.trim(), role: staffForm.role, branch_id: staffForm.branch_id }
-    });
-    if (e2 || data?.error) setError(e2?.message || data.error);
-    else { setNotice('Şube kullanıcı hesabı oluşturuldu.'); setStaffForm({ username: '', password: '', display_name: '', role: 'cashier', branch_id: '' }); await refresh(); }
-    setBusy(false);
+    const cleanUsername = staffForm.username.trim().toLowerCase();
+    if (!/^[a-z0-9._-]{3,40}$/.test(cleanUsername)) {
+      setError('Kullanıcı adı 3-40 karakter olmalı; yalnızca İngilizce harf, rakam, nokta, tire ve alt çizgi kullanın. E-posta adresi girmeyin.');
+      setBusy(false);
+      return;
+    }
+    try {
+      const { data, error: invokeError } = await supabase.functions.invoke('create-branch-user', {
+        body: { username: cleanUsername, password: staffForm.password, display_name: staffForm.display_name.trim(), role: staffForm.role, branch_id: staffForm.branch_id }
+      });
+      if (invokeError) {
+        let detail = invokeError.message;
+        const context = (invokeError as { context?: Response }).context;
+        if (context) {
+          try { const payload = await context.clone().json(); if (payload?.error) detail = payload.error; } catch { /* keep the original message */ }
+        }
+        throw new Error(detail);
+      }
+      if (data?.error) throw new Error(data.error);
+      setNotice('Şube kullanıcı hesabı oluşturuldu.');
+      setStaffForm({ username: '', password: '', display_name: '', role: 'cashier', branch_id: '' });
+      await refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Şube kullanıcısı oluşturulamadı.');
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function toggleBranch(branch: Branch) {
@@ -242,10 +263,10 @@ export default function App() {
         </div>}
         {tab === 'staff' && isCentral && <div className="two-col">
           <section className="surface"><div className="section-head"><div><h2>Şube kullanıcısı oluştur</h2><p>Her çalışan için ayrı kullanıcı adı ve parola tanımlayın.</p></div></div>
-            <form className="stack-form" onSubmit={createStaff}>
-              <label>Ad soyad<input required value={staffForm.display_name} onChange={e => setStaffForm({ ...staffForm, display_name: e.target.value })} placeholder="Personel adı"/></label>
-              <label>Kullanıcı adı<input required minLength={3} value={staffForm.username} onChange={e => setStaffForm({ ...staffForm, username: e.target.value.replace(/\s/g,'') })} placeholder="ornek.kullanici"/></label>
-              <label>İlk parola<input required minLength={8} type="password" value={staffForm.password} onChange={e => setStaffForm({ ...staffForm, password: e.target.value })} placeholder="En az 8 karakter"/></label>
+            <form className="stack-form" onSubmit={createStaff} autoComplete="off">
+              <label>Ad soyad<input required name="tobu-staff-display-name" autoComplete="off" value={staffForm.display_name} onChange={e => setStaffForm({ ...staffForm, display_name: e.target.value })} placeholder="Personel adı"/></label>
+              <label>Kullanıcı adı<input required name="tobu-new-staff-username" autoComplete="off" data-lpignore="true" data-1p-ignore="true" spellCheck={false} minLength={3} maxLength={40} value={staffForm.username} onChange={e => setStaffForm({ ...staffForm, username: e.target.value.replace(/\s/g,'') })} placeholder="ornek.kullanici (e-posta değil)"/></label>
+              <label>İlk parola<input required name="tobu-new-staff-password" autoComplete="new-password" minLength={8} type="password" value={staffForm.password} onChange={e => setStaffForm({ ...staffForm, password: e.target.value })} placeholder="En az 8 karakter"/></label>
               <label>Şube<select required value={staffForm.branch_id} onChange={e => setStaffForm({ ...staffForm, branch_id: e.target.value })}><option value="">Şube seçin</option>{branches.map(b => <option key={b.id} value={b.id}>{b.branch_name} ({b.branch_code})</option>)}</select></label>
               <label>Yetki<select value={staffForm.role} onChange={e => setStaffForm({ ...staffForm, role: e.target.value })}><option value="cashier">Kasiyer</option><option value="branch_manager">Şube yöneticisi</option></select></label>
               <button className="btn primary" disabled={busy || !branches.length}><Users size={17}/> Kullanıcıyı Oluştur</button>
