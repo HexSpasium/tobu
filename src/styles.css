@@ -82,3 +82,10 @@
 .sale-cancelled{opacity:.78}
 .sale-cancelled>strong{text-decoration:line-through;color:#8e949d}
 @media(max-width:700px){.modal-backdrop{padding:10px}.cancel-modal{padding:16px}.cancel-item{align-items:flex-start;flex-wrap:wrap}.cancel-item .branch-main{min-width:45%}.cancel-button-row>*{flex:1}}
+
+.cancel-audit{border-top:1px solid #eceef1;padding-top:14px;margin:10px 0 16px}
+.cancel-audit>b{display:block;font-size:11px;margin-bottom:8px;color:#343a40}
+.audit-row{display:grid;grid-template-columns:1fr auto;gap:4px 12px;padding:9px 0;border-bottom:1px solid #f0f1f3}
+.audit-row span{font-size:10px;font-weight:700;color:#4d5660}
+.audit-row strong{font:800 10px Manrope;color:#c51f32}
+.audit-row small{grid-column:1/-1;font-size:9px;color:#858d97}
