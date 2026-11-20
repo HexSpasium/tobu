@@ -1,0 +1,29 @@
+name: Build TOBU Windows Installer
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+permissions:
+  contents: read
+jobs:
+  windows-installer:
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        arch: [x64, arm64]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm install
+      - run: npm run build
+      - run: node scripts/generate-icons.mjs
+      - run: npx electron-builder --win nsis --${{ matrix.arch }} --publish never
+      - uses: actions/upload-artifact@v4
+        with:
+          name: TOBU-Windows-${{ matrix.arch }}
+          path: release/*.exe
+          if-no-files-found: error
+          retention-days: 30
