@@ -29,9 +29,37 @@
 .product-tile strong{font:800 14px Manrope;color:#25282d}
 .product-tile small{font-size:9px;color:var(--red);font-weight:700}
 .pos-empty{grid-column:1/-1}
-.pos-checkout{position:sticky;top:16px}
+.pos-checkout{
+  position:sticky;
+  top:16px;
+  max-height:calc(100vh - 112px);
+  display:flex;
+  flex-direction:column;
+  overflow:hidden;
+  min-height:0;
+}
+.pos-checkout .section-head{flex:0 0 auto}
 .pos-checkout .section-head h2{display:flex;align-items:center;gap:8px}
-.cart-lines{min-height:110px;max-height:340px;overflow:auto;border-top:1px solid #f0f1f3}
+.cart-lines{
+  flex:1 1 auto;
+  min-height:90px;
+  max-height:none;
+  overflow-y:auto;
+  overflow-x:hidden;
+  border-top:1px solid #f0f1f3;
+  overscroll-behavior:contain;
+}
+.pos-checkout .checkout-fields,
+.pos-checkout .cart-total,
+.pos-checkout .sale-button{flex:0 0 auto}
+.pos-checkout .sale-button{
+  position:relative;
+  z-index:2;
+  width:100%;
+  min-height:48px;
+  margin-top:8px;
+  flex-shrink:0;
+}
 .cart-line{display:flex;align-items:center;gap:8px;padding:12px 0;border-bottom:1px solid #f0f1f3}
 .cart-product{flex:1;min-width:0}
 .cart-product b{display:block;font-size:10px;color:#30353b}
