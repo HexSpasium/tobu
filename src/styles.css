@@ -148,3 +148,61 @@
 .expense-cancelled-label{color:#c51f32;font-size:10px;font-weight:850;margin-top:6px;letter-spacing:.2px}
 .expense-amount-cancelled{text-decoration:line-through;color:#9299a2!important}
 .expense-row:has(.expense-cancelled-label){background:#fffafa}
+
+
+/* Android / small-screen layout hardening */
+:root { color-scheme: light; }
+html { min-height:100%; -webkit-text-size-adjust:100%; text-size-adjust:100%; }
+body { min-height:100%; overflow-x:hidden; overscroll-behavior-y:contain; }
+#root,.app-shell,.main-area { min-width:0; }
+img,svg { max-width:100%; }
+button,input,select,textarea { min-width:0; }
+.topbar { padding-top:env(safe-area-inset-top, 0px); }
+.sidebar { padding-top:calc(26px + env(safe-area-inset-top, 0px)); padding-bottom:calc(26px + env(safe-area-inset-bottom, 0px)); }
+.main-area { padding-bottom:env(safe-area-inset-bottom, 0px); }
+.content { min-width:0; overflow-wrap:anywhere; }
+.page-heading,.section-head,.metric-top,.branch-row,.expense-row { min-width:0; }
+.page-heading h1,.section-head h2,.metric-card>strong,.branch-main b,.branch-main small { overflow-wrap:anywhere; }
+.metric-card,.surface,.pos-catalog,.pos-checkout,.expense-form-card,.expense-list-card { min-width:0; }
+.metric-top { gap:8px; align-items:flex-start; }
+.metric-top span { min-width:0; overflow-wrap:anywhere; }
+.metric-top i { flex:0 0 31px; }
+.metric-card>small { display:block; line-height:1.55; overflow-wrap:anywhere; }
+.live-pill { white-space:nowrap; flex-shrink:0; }
+@media(max-width:700px) {
+  .topbar { height:auto; min-height:66px; padding-left:14px; padding-right:14px; padding-bottom:10px; }
+  .topbar>div:first-child { min-width:0; }
+  .topbar b { overflow-wrap:anywhere; }
+  .content { padding-bottom:calc(26px + env(safe-area-inset-bottom, 0px)); }
+  .page-heading { gap:12px; }
+  .page-heading>div:first-child { min-width:0; }
+  .page-heading h1 { line-height:1.2; overflow-wrap:break-word; }
+  .page-heading p { line-height:1.55; }
+  .metric-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .metric-card { min-width:0; }
+  .metric-card>strong { font-size:clamp(16px,4.5vw,20px); }
+  .surface { min-width:0; }
+  .branch-row { flex-wrap:wrap; }
+  .branch-main { min-width:0; }
+  .branch-revenue { margin-left:auto; }
+  .sidebar { padding-top:calc(18px + env(safe-area-inset-top, 0px)); padding-bottom:calc(18px + env(safe-area-inset-bottom, 0px)); }
+  .brand-lockup.side .tobu-logo { flex:0 0 40px; }
+  .nav-link { min-height:46px; }
+  .nav-link svg { flex:0 0 19px; }
+  .pos-layout { min-width:0; }
+  .pos-checkout { max-height:none; }
+  .cancel-item,.expense-row { min-width:0; }
+  .cancel-item>strong,.expense-row>strong { max-width:100%; overflow-wrap:anywhere; }
+  .modal-backdrop { padding-top:calc(10px + env(safe-area-inset-top, 0px)); padding-bottom:calc(10px + env(safe-area-inset-bottom, 0px)); }
+}
+@media(max-width:380px) {
+  .sidebar { width:60px; padding-left:6px; padding-right:6px; }
+  .main-area { margin-left:60px; }
+  .content { padding-left:10px; padding-right:10px; }
+  .metric-grid { gap:7px; }
+  .metric-card { padding:11px; }
+  .metric-top { font-size:9px; }
+  .metric-card>strong { font-size:16px; }
+  .surface { padding:13px; }
+  .page-heading h1 { font-size:20px; }
+}
