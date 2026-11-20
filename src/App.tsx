@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Activity, ArrowDownRight, ArrowUpRight, Building2, CheckCircle2, CircleAlert, LogOut, MapPin, Plus, RefreshCw, ShieldCheck, Store, Users, Wifi, WifiOff } from 'lucide-react';
+import { Activity, ArrowDownRight, ArrowUpRight, Building2, CheckCircle2, CircleAlert, LogOut, MapPin, Plus, RefreshCw, ShieldCheck, Store, Users, Wifi, WifiOff, ShoppingCart, PackagePlus, Search, Minus, Trash2, Receipt, CreditCard } from 'lucide-react';
 import { supabase } from './lib/supabase';
 
 type Profile = { user_id: string; display_name: string; username: string | null; role: 'central_admin' | 'branch_manager' | 'cashier'; branch_id: string | null; is_active: boolean };
@@ -7,7 +7,11 @@ type City = { id: number; name: string; plate_code: number };
 type Branch = { id: string; city_id: number; branch_code: string; branch_name: string; is_enabled: boolean; address: string | null; cities?: City };
 type Presence = { branch_id: string; status: string; last_seen_at: string };
 type Staff = { user_id: string; display_name: string; username: string | null; role: string; branch_id: string | null; is_active: boolean };
-type Order = { branch_id: string; total: number; status: string; created_at: string; paid_at: string | null };
+type Order = { id: string; branch_id: string; order_number: number; order_type: string; table_number: number | null; total: number; status: string; payment_method: string | null; created_at: string; paid_at: string | null };
+type Category = { id: string; name: string; sort_order: number; is_active: boolean };
+type Product = { id: string; category_id: string | null; name: string; description: string | null; base_price: number; is_active: boolean; sort_order: number };
+type BranchProduct = { branch_id: string; product_id: string; is_available: boolean; sale_price: number | null };
+type CartLine = { product: Product; quantity: number };
 type Expense = { branch_id: string; amount: number; expense_date: string };
 const money = (v: number) => new Intl.NumberFormat('tr-TR', { style: 'currency', currency: 'TRY', maximumFractionDigits: 0 }).format(v || 0);
 const dateKey = () => new Date().toLocaleDateString('en-CA');
@@ -26,19 +30,36 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
-  const [tab, setTab] = useState<'overview' | 'branches' | 'staff'>('overview');
+  const [tab, setTab] = useState<'overview' | 'branches' | 'staff' | 'pos' | 'menu'>('overview');
   const [branches, setBranches] = useState<Branch[]>([]);
   const [presence, setPresence] = useState<Presence[]>([]);
   const [staff, setStaff] = useState<Staff[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [cities, setCities] = useState<City[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [branchProducts, setBranchProducts] = useState<BranchProduct[]>([]);
+  const [cart, setCart] = useState<CartLine[]>([]);
+  const [posBranchId, setPosBranchId] = useState('');
+  const [posCategory, setPosCategory] = useState('all');
+  const [posSearch, setPosSearch] = useState('');
+  const [orderType, setOrderType] = useState('counter');
+  const [tableNumber, setTableNumber] = useState('');
+  const [paymentMethod, setPaymentMethod] = useState('cash');
+  const [saleNote, setSaleNote] = useState('');
+  const [categoryName, setCategoryName] = useState('');
+  const [productForm, setProductForm] = useState({ name: '', category_id: '', base_price: '', description: '' });
   const [branchForm, setBranchForm] = useState({ city_id: '', branch_code: '', branch_name: '', address: '' });
   const [staffForm, setStaffForm] = useState({ username: '', password: '', display_name: '', role: 'cashier', branch_id: '' });
 
   const isCentral = profile?.role === 'central_admin';
   const myBranch = branches.find(b => b.id === profile?.branch_id);
   const todayOrders = orders.filter(o => o.status === 'paid' && (o.paid_at || o.created_at).slice(0, 10) === dateKey());
+  const activePosBranch = isCentral ? branches.find(b => b.id === posBranchId) : myBranch;
+  const posBranchProducts = branchProducts.filter(x => x.branch_id === activePosBranch?.id);
+  const visibleProducts = products.filter(p => p.is_active && (posCategory === 'all' || p.category_id === posCategory) && p.name.toLocaleLowerCase('tr').includes(posSearch.toLocaleLowerCase('tr')) && (!posBranchProducts.some(x => x.product_id === p.id) || posBranchProducts.find(x => x.product_id === p.id)?.is_available !== false));
+  const cartTotal = cart.reduce((sum, line) => sum + line.quantity * Number(posBranchProducts.find(x => x.product_id === line.product.id)?.sale_price ?? line.product.base_price), 0);
   const todayRevenue = todayOrders.reduce((sum, o) => sum + Number(o.total), 0);
   const todayExpenses = expenses.filter(e => e.expense_date === dateKey()).reduce((sum, e) => sum + Number(e.amount), 0);
   const onlineCount = useMemo(() => branches.filter(b => {
@@ -50,15 +71,18 @@ export default function App() {
     const branchFilter = !isCentral && p.branch_id ? p.branch_id : undefined;
     let branchQuery = supabase.from('branches').select('id,city_id,branch_code,branch_name,is_enabled,address,cities(id,name,plate_code)').order('branch_name');
     if (branchFilter) branchQuery = branchQuery.eq('id', branchFilter);
-    const [b, c, pr, st, o, ex] = await Promise.all([
+    const [b, c, pr, st, o, ex, cats, prods, bp] = await Promise.all([
       branchQuery,
       supabase.from('cities').select('id,name,plate_code').order('plate_code'),
       supabase.from('branch_presence').select('branch_id,status,last_seen_at').order('last_seen_at', { ascending: false }),
       supabase.from('staff_profiles').select('user_id,display_name,username,role,branch_id,is_active').order('display_name'),
-      (() => { let q = supabase.from('orders').select('branch_id,total,status,created_at,paid_at').order('created_at', { ascending: false }).limit(500); if (branchFilter) q = q.eq('branch_id', branchFilter); return q; })(),
-      (() => { let q = supabase.from('expenses').select('branch_id,amount,expense_date').order('expense_date', { ascending: false }).limit(500); if (branchFilter) q = q.eq('branch_id', branchFilter); return q; })()
+      (() => { let q = supabase.from('orders').select('id,branch_id,order_number,order_type,table_number,total,status,payment_method,created_at,paid_at').order('created_at', { ascending: false }).limit(500); if (branchFilter) q = q.eq('branch_id', branchFilter); return q; })(),
+      (() => { let q = supabase.from('expenses').select('branch_id,amount,expense_date').order('expense_date', { ascending: false }).limit(500); if (branchFilter) q = q.eq('branch_id', branchFilter); return q; })(),
+      supabase.from('categories').select('id,name,sort_order,is_active').eq('is_active', true).order('sort_order'),
+      supabase.from('products').select('id,category_id,name,description,base_price,is_active,sort_order').order('sort_order').order('name'),
+      (() => { let q = supabase.from('branch_products').select('branch_id,product_id,is_available,sale_price'); if (branchFilter) q = q.eq('branch_id', branchFilter); return q; })()
     ]);
-    const firstError = b.error || c.error || pr.error || st.error || o.error || ex.error;
+    const firstError = b.error || c.error || pr.error || st.error || o.error || ex.error || cats.error || prods.error || bp.error;
     if (firstError) throw firstError;
     setBranches((b.data || []) as unknown as Branch[]);
     setCities((c.data || []) as City[]);
@@ -66,6 +90,10 @@ export default function App() {
     setStaff((st.data || []) as Staff[]);
     setOrders((o.data || []) as Order[]);
     setExpenses((ex.data || []) as Expense[]);
+    setCategories((cats.data || []) as Category[]);
+    setProducts((prods.data || []) as Product[]);
+    setBranchProducts((bp.data || []) as BranchProduct[]);
+    if (!posBranchId && p.branch_id) setPosBranchId(p.branch_id);
   }, [isCentral]);
 
   const refresh = useCallback(async () => {
@@ -176,6 +204,43 @@ export default function App() {
     }
   }
 
+  async function createCategory(e: React.FormEvent) {
+    e.preventDefault(); setBusy(true); setError(''); setNotice('');
+    const name = categoryName.trim();
+    if (!name) { setBusy(false); return; }
+    const { error: e2 } = await supabase.from('categories').insert({ name, sort_order: categories.length });
+    if (e2) setError(e2.message); else { setNotice('Kategori oluşturuldu.'); setCategoryName(''); await refresh(); }
+    setBusy(false);
+  }
+
+  async function createProduct(e: React.FormEvent) {
+    e.preventDefault(); setBusy(true); setError(''); setNotice('');
+    const price = Number(productForm.base_price);
+    if (!productForm.name.trim() || !Number.isFinite(price) || price < 0) { setError('Ürün adı ve geçerli bir fiyat girin.'); setBusy(false); return; }
+    const { error: e2 } = await supabase.from('products').insert({ name: productForm.name.trim(), category_id: productForm.category_id || null, base_price: price, description: productForm.description.trim() || null, sort_order: products.length, is_active: true });
+    if (e2) setError(e2.message); else { setNotice('Ürün menüye eklendi.'); setProductForm({ name: '', category_id: '', base_price: '', description: '' }); await refresh(); }
+    setBusy(false);
+  }
+
+  function addToCart(product: Product) { setCart(current => { const found = current.find(x => x.product.id === product.id); return found ? current.map(x => x.product.id === product.id ? { ...x, quantity: x.quantity + 1 } : x) : [...current, { product, quantity: 1 }]; }); }
+  function changeCartQuantity(productId: string, delta: number) { setCart(current => current.map(x => x.product.id === productId ? { ...x, quantity: x.quantity + delta } : x).filter(x => x.quantity > 0)); }
+
+  async function completeSale() {
+    if (!activePosBranch) { setError('Önce satış yapılacak şubeyi seçin.'); return; }
+    if (!cart.length) { setError('Sepet boş. Önce ürün ekleyin.'); return; }
+    if (orderType === 'table' && (!tableNumber || Number(tableNumber) < 1)) { setError('Geçerli bir masa numarası girin.'); return; }
+    setBusy(true); setError(''); setNotice('');
+    const { data, error: saleError } = await supabase.rpc('tobu_create_order', { p_branch_id: activePosBranch.id, p_order_type: orderType, p_table_number: orderType === 'table' ? Number(tableNumber) : null, p_payment_method: paymentMethod, p_note: saleNote, p_items: cart.map(x => ({ product_id: x.product.id, quantity: x.quantity })) });
+    if (saleError) setError(saleError.message);
+    else { setNotice('Satış tamamlandı. Sipariş kaydı: ' + String(data).slice(0, 8)); setCart([]); setTableNumber(''); setSaleNote(''); await refresh(); }
+    setBusy(false);
+  }
+
+  async function toggleProduct(product: Product) {
+    const { error: e } = await supabase.from('products').update({ is_active: !product.is_active }).eq('id', product.id);
+    if (e) setError(e.message); else { setNotice(product.is_active ? 'Ürün satışa kapatıldı.' : 'Ürün yeniden satışa açıldı.'); await refresh(); }
+  }
+
   async function toggleBranch(branch: Branch) {
     const { error: e } = await supabase.from('branches').update({ is_enabled: !branch.is_enabled }).eq('id', branch.id);
     if (e) setError(e.message); else { setNotice(branch.is_enabled ? 'Şube devre dışı bırakıldı.' : 'Şube yeniden etkinleştirildi.'); await refresh(); }
@@ -211,6 +276,8 @@ export default function App() {
       <div className="brand-lockup side"><div className="tobu-logo">T</div><div><b>TOBU</b><small>FRANCHISE PLATFORM</small></div></div>
       <div className="nav-caption">YÖNETİM</div>
       <button className={'nav-link ' + (tab === 'overview' ? 'active' : '')} onClick={() => setTab('overview')}><Activity size={18}/> Genel Bakış</button>
+      <button className={'nav-link ' + (tab === 'pos' ? 'active' : '')} onClick={() => setTab('pos')}><ShoppingCart size={18}/> POS / Satış</button>
+      {isCentral && <button className={'nav-link ' + (tab === 'menu' ? 'active' : '')} onClick={() => setTab('menu')}><PackagePlus size={18}/> Menü Yönetimi</button>}
       {isCentral && <button className={'nav-link ' + (tab === 'branches' ? 'active' : '')} onClick={() => setTab('branches')}><Building2 size={18}/> Şubeler</button>}
       {isCentral && <button className={'nav-link ' + (tab === 'staff' ? 'active' : '')} onClick={() => setTab('staff')}><Users size={18}/> Kullanıcılar</button>}
       <div className="sidebar-bottom">
@@ -220,7 +287,7 @@ export default function App() {
       </div>
     </aside>
     <main className="main-area">
-      <header className="topbar"><div><span className="crumb">TOBU / </span><b>{tab === 'overview' ? 'Genel Bakış' : tab === 'branches' ? 'Şube Yönetimi' : 'Kullanıcı Yönetimi'}</b><small>{new Date().toLocaleDateString('tr-TR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</small></div><div className="topbar-actions"><span className="secure"><ShieldCheck size={15}/> Güvenli oturum</span><button className="icon-action" onClick={refresh} title="Yenile"><RefreshCw size={17}/></button></div></header>
+      <header className="topbar"><div><span className="crumb">TOBU / </span><b>{tab === 'overview' ? 'Genel Bakış' : tab === 'branches' ? 'Şube Yönetimi' : tab === 'staff' ? 'Kullanıcı Yönetimi' : tab === 'pos' ? 'POS / Satış' : 'Menü Yönetimi'}</b><small>{new Date().toLocaleDateString('tr-TR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</small></div><div className="topbar-actions"><span className="secure"><ShieldCheck size={15}/> Güvenli oturum</span><button className="icon-action" onClick={refresh} title="Yenile"><RefreshCw size={17}/></button></div></header>
       <div className="content">
         {error && <div className="alert error"><CircleAlert size={16}/>{error}<button onClick={() => setError('')}>×</button></div>}
         {notice && <div className="alert success"><CheckCircle2 size={16}/>{notice}<button onClick={() => setNotice('')}>×</button></div>}
@@ -260,6 +327,23 @@ export default function App() {
               {!branches.length && <div className="empty">Şube kaydı bulunmuyor.</div>}
             </div>
           </section>
+        </div>}
+        {tab === 'pos' && <div className="pos-layout">
+          <section className="surface pos-catalog"><div className="section-head"><div><h2>Ürün kataloğu</h2><p>{activePosBranch ? activePosBranch.branch_name : 'Satış için şube seçin'}</p></div></div>
+            {isCentral && <label className="pos-branch-select">Satış şubesi<select value={posBranchId} onChange={e => setPosBranchId(e.target.value)}><option value="">Şube seçin</option>{branches.filter(b => b.is_enabled).map(b => <option key={b.id} value={b.id}>{b.branch_name} • {b.branch_code}</option>)}</select></label>}
+            <div className="pos-tools"><div className="search-box"><Search size={16}/><input value={posSearch} onChange={e => setPosSearch(e.target.value)} placeholder="Ürün ara…"/></div></div>
+            <div className="category-pills"><button className={posCategory === 'all' ? 'selected' : ''} onClick={() => setPosCategory('all')}>Tümü</button>{categories.map(cat => <button key={cat.id} className={posCategory === cat.id ? 'selected' : ''} onClick={() => setPosCategory(cat.id)}>{cat.name}</button>)}</div>
+            <div className="product-grid">{visibleProducts.map(product => { const branchPrice = posBranchProducts.find(x => x.product_id === product.id)?.sale_price; return <button className="product-tile" key={product.id} onClick={() => addToCart(product)} disabled={!activePosBranch}><span className="product-tile-icon"><Store size={20}/></span><b>{product.name}</b><strong>{money(Number(branchPrice ?? product.base_price))}</strong><small>Sepete ekle +</small></button>; })}{!visibleProducts.length && <div className="empty pos-empty">{products.length ? 'Bu filtrede satışa açık ürün yok.' : 'Henüz menü ürünü eklenmemiş. Merkez yönetimi Menü Yönetimi bölümünden ürün ekleyebilir.'}</div>}</div>
+          </section>
+          <section className="surface pos-checkout"><div className="section-head"><div><h2><ShoppingCart size={17}/> Aktif sepet</h2><p>{cart.reduce((n,x)=>n+x.quantity,0)} ürün</p></div><button className="btn mini outline" onClick={() => setCart([])} disabled={!cart.length}>Sepeti temizle</button></div>
+            <div className="cart-lines">{cart.map(line => { const price = Number(posBranchProducts.find(x => x.product_id === line.product.id)?.sale_price ?? line.product.base_price); return <div className="cart-line" key={line.product.id}><div className="cart-product"><b>{line.product.name}</b><small>{money(price)} / adet</small></div><div className="qty-control"><button onClick={() => changeCartQuantity(line.product.id,-1)} aria-label="Azalt"><Minus size={13}/></button><b>{line.quantity}</b><button onClick={() => changeCartQuantity(line.product.id,1)} aria-label="Artır"><Plus size={13}/></button></div><strong>{money(price*line.quantity)}</strong><button className="remove-line" onClick={() => setCart(current => current.filter(x => x.product.id !== line.product.id))} aria-label="Ürünü çıkar"><Trash2 size={14}/></button></div>; })}{!cart.length && <div className="empty">Satışa başlamak için soldan ürün seçin.</div>}</div>
+            <div className="checkout-fields"><label>Sipariş türü<select value={orderType} onChange={e => setOrderType(e.target.value)}><option value="counter">Kasadan</option><option value="table">Masa</option><option value="takeaway">Gel-al</option><option value="delivery">Paket servis</option></select></label>{orderType === 'table' && <label>Masa numarası<input type="number" min="1" value={tableNumber} onChange={e => setTableNumber(e.target.value)} placeholder="Örn. 4"/></label>}<label>Ödeme yöntemi<select value={paymentMethod} onChange={e => setPaymentMethod(e.target.value)}><option value="cash">Nakit</option><option value="card">Kredi / banka kartı</option><option value="online">Online</option><option value="other">Diğer</option></select></label><label>Not (isteğe bağlı)<input value={saleNote} onChange={e => setSaleNote(e.target.value)} placeholder="Sipariş notu"/></label></div>
+            <div className="cart-total"><span>Genel toplam</span><strong>{money(cartTotal)}</strong></div><button className="btn primary full sale-button" onClick={completeSale} disabled={busy || !cart.length || !activePosBranch}><CreditCard size={17}/>{busy ? 'İşleniyor…' : 'Satışı Tamamla'}</button>
+          </section></div>}
+        {tab === 'menu' && isCentral && <div className="two-col menu-layout">
+          <section className="surface"><div className="section-head"><div><h2>Menü kategorisi ekle</h2><p>Ürünleri kategorilere ayırın.</p></div></div><form className="stack-form" onSubmit={createCategory}><label>Kategori adı<input required value={categoryName} onChange={e => setCategoryName(e.target.value)} placeholder="Örn. İçecekler"/></label><button className="btn primary" disabled={busy}><Plus size={16}/> Kategori ekle</button></form><div className="category-admin-list">{categories.map(cat => <span key={cat.id}>{cat.name}</span>)}</div></section>
+          <section className="surface"><div className="section-head"><div><h2>Menü ürünü ekle</h2><p>Ürün fiyatı merkez menü fiyatıdır; şube özel fiyatı sonraki aşamada tanımlanabilir.</p></div></div><form className="stack-form" onSubmit={createProduct}><label>Ürün adı<input required value={productForm.name} onChange={e => setProductForm({...productForm,name:e.target.value})} placeholder="Ürün adı"/></label><label>Kategori<select value={productForm.category_id} onChange={e => setProductForm({...productForm,category_id:e.target.value})}><option value="">Kategorisiz</option>{categories.map(cat => <option key={cat.id} value={cat.id}>{cat.name}</option>)}</select></label><label>Satış fiyatı (₺)<input required type="number" min="0" step="0.01" value={productForm.base_price} onChange={e => setProductForm({...productForm,base_price:e.target.value})} placeholder="0,00"/></label><label>Açıklama<input value={productForm.description} onChange={e => setProductForm({...productForm,description:e.target.value})} placeholder="İsteğe bağlı"/></label><button className="btn primary" disabled={busy}><Plus size={16}/> Ürünü kaydet</button></form></section>
+          <section className="surface menu-product-list"><div className="section-head"><div><h2>Kayıtlı ürünler</h2><p>{products.length} ürün</p></div></div>{products.map(p => <div className="branch-row" key={p.id}><div className="branch-symbol"><Receipt size={17}/></div><div className="branch-main"><b>{p.name}</b><small>{categories.find(c=>c.id===p.category_id)?.name || 'Kategorisiz'} • {money(Number(p.base_price))}</small></div><button className={'btn mini '+(p.is_active?'danger':'outline')} onClick={()=>toggleProduct(p)}>{p.is_active?'Satışa kapat':'Yeniden aç'}</button></div>)}{!products.length && <div className="empty">Henüz ürün eklenmemiş.</div>}</section>
         </div>}
         {tab === 'staff' && isCentral && <div className="two-col">
           <section className="surface"><div className="section-head"><div><h2>Şube kullanıcısı oluştur</h2><p>Her çalışan için ayrı kullanıcı adı ve parola tanımlayın.</p></div></div>
