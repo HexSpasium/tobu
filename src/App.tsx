@@ -243,6 +243,32 @@ export default function App() {
     setBusy(false);
   }
 
+  async function openOrder(order: Order) {
+    setSelectedOrder(order); setSelectedItems([]); setCancelReason(''); setCancelItemId(''); setCancelQuantity('1');
+    const { data, error: e } = await supabase.from('order_items').select('id,product_name,quantity,cancelled_quantity,unit_price,line_total').eq('order_id', order.id).order('created_at');
+    if (e) { setError(e.message); setSelectedOrder(null); return; }
+    setSelectedItems((data || []) as OrderItem[]);
+  }
+
+  async function cancelWholeOrder() {
+    if (!selectedOrder || !cancelReason.trim()) { setError('İptal nedeni girin.'); return; }
+    if (!window.confirm('Bu satışın tamamını iptal etmek istediğinize emin misiniz?')) return;
+    setBusy(true); setError(''); setNotice('');
+    const { error: e } = await supabase.rpc('tobu_cancel_order', { p_order_id: selectedOrder.id, p_reason: cancelReason.trim() });
+    if (e) setError(e.message); else { setNotice('Satışın tamamı iptal edildi. İşlem denetim kaydına eklendi.'); setSelectedOrder(null); await refresh(); }
+    setBusy(false);
+  }
+
+  async function cancelOneItem() {
+    if (!selectedOrder || !cancelItemId || !cancelReason.trim()) { setError('Ürün ve iptal nedeni seçin.'); return; }
+    const qty = Number(cancelQuantity);
+    if (!Number.isFinite(qty) || qty <= 0) { setError('Geçerli iptal miktarı girin.'); return; }
+    setBusy(true); setError(''); setNotice('');
+    const { error: e } = await supabase.rpc('tobu_cancel_order_item', { p_order_item_id: cancelItemId, p_quantity: qty, p_reason: cancelReason.trim() });
+    if (e) setError(e.message); else { setNotice('Seçilen ürün miktarı iptal edildi.'); setSelectedOrder(null); await refresh(); }
+    setBusy(false);
+  }
+
   async function toggleProduct(product: Product) {
     const { error: e } = await supabase.from('products').update({ is_active: !product.is_active }).eq('id', product.id);
     if (e) setError(e.message); else { setNotice(product.is_active ? 'Ürün satışa kapatıldı.' : 'Ürün yeniden satışa açıldı.'); await refresh(); }
