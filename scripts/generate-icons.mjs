@@ -2,15 +2,33 @@ import fs from 'node:fs';
 import path from 'node:path';
 import sharp from 'sharp';
 import pngToIco from 'png-to-ico';
+
 const root = process.cwd();
 const svg = path.join(root, 'public', 'tobu.svg');
 const build = path.join(root, 'build');
 const assets = path.join(root, 'assets');
+
 fs.mkdirSync(build, { recursive: true });
 fs.mkdirSync(assets, { recursive: true });
+
 const master = await sharp(svg).resize(1024, 1024).png().toBuffer();
+
+// Capacitor Assets expects assets/icon.png as its launcher icon source.
+await fs.promises.writeFile(path.join(assets, 'icon.png'), master);
 await fs.promises.writeFile(path.join(assets, 'icon-only.png'), master);
-await fs.promises.writeFile(path.join(assets, 'splash.png'), await sharp(master).resize(2732, 2732, { fit: 'contain', background: '#101114' }).png().toBuffer());
-const icoPngs = await Promise.all([16,24,32,48,64,128,256].map(size => sharp(master).resize(size,size).png().toBuffer()));
+await fs.promises.writeFile(
+  path.join(assets, 'splash.png'),
+  await sharp(master).resize(2732, 2732, {
+    fit: 'contain',
+    background: '#C51F32'
+  }).png().toBuffer()
+);
+
+const icoPngs = await Promise.all(
+  [16, 24, 32, 48, 64, 128, 256].map(size =>
+    sharp(master).resize(size, size).png().toBuffer()
+  )
+);
 await fs.promises.writeFile(path.join(build, 'tobu.ico'), await pngToIco(icoPngs));
-console.log('TOBU icon assets generated.');
+
+console.log('TOBU icon assets generated for Android and Windows.');
