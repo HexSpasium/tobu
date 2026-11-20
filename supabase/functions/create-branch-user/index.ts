@@ -21,13 +21,18 @@ Deno.serve(async (req: Request) => {
   const secret = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
   if (!secret) return json({ error: "Sunucu yönetim anahtarı eksik." }, 500);
 
-  const auth = createClient(url, anon, { auth: { persistSession: false } });
+  // Validate the caller and read their own profile with their authenticated JWT.
+  // This avoids relying on a service-key REST read for the authorization check.
+  const auth = createClient(url, anon, {
+    global: { headers: { Authorization: `Bearer ${token}` } },
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
   const { data: userData, error: userError } = await auth.auth.getUser(token);
   if (userError || !userData.user) return json({ error: "Oturum geçersiz." }, 401);
 
-  const admin = createClient(url, secret, { auth: { persistSession: false } });
-  const { data: actor } = await admin.from("staff_profiles").select("role,is_active")
-    .eq("user_id", userData.user.id).maybeSingle();
+  const { data: actor, error: actorError } = await auth.from("staff_profiles")
+    .select("role,is_active").eq("user_id", userData.user.id).maybeSingle();
+  if (actorError) return json({ error: "Yönetici yetkisi doğrulanamadı: " + actorError.message }, 403);
   if (actor?.role !== "central_admin" || actor.is_active !== true)
     return json({ error: "Yalnızca merkez yöneticisi kullanıcı oluşturabilir." }, 403);
 
@@ -41,9 +46,13 @@ Deno.serve(async (req: Request) => {
   if (password.length < 8 || !displayName || !branchId) return json({ error: "Ad, şube ve en az 8 karakterli parola gereklidir." }, 400);
   if (!["cashier", "branch_manager"].includes(role)) return json({ error: "Rol geçersiz." }, 400);
 
-  const { data: branch } = await admin.from("branches").select("id,is_enabled").eq("id", branchId).maybeSingle();
+  const { data: branch, error: branchError } = await auth.from("branches")
+    .select("id,is_enabled").eq("id", branchId).maybeSingle();
+  if (branchError) return json({ error: "Şube yetkisi doğrulanamadı: " + branchError.message }, 403);
   if (!branch?.is_enabled) return json({ error: "Şube aktif değil." }, 400);
 
+  // The secret key is used only for Auth Admin operations and profile insertion.
+  const admin = createClient(url, secret, { auth: { persistSession: false, autoRefreshToken: false } });
   const { data: created, error: createError } = await admin.auth.admin.createUser({
     email: username + "@tobu.local", password, email_confirm: true
   });
@@ -54,7 +63,7 @@ Deno.serve(async (req: Request) => {
   });
   if (profileError) {
     await admin.auth.admin.deleteUser(created.user.id);
-    return json({ error: profileError.message }, 400);
+    return json({ error: "Personel profili kaydedilemedi: " + profileError.message }, 400);
   }
   return json({ ok: true, username });
 });
