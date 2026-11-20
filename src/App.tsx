@@ -4,7 +4,7 @@ import { supabase } from './lib/supabase';
 
 type Profile = { user_id: string; display_name: string; username: string | null; role: 'central_admin' | 'branch_manager' | 'cashier'; branch_id: string | null; is_active: boolean };
 type City = { id: number; name: string; plate_code: number };
-type Branch = { id: string; city_id: number; branch_code: string; branch_name: string; is_enabled: boolean; address: string | null; cities?: City };
+type Branch = { id: string; city_id: number; branch_code: string; branch_name: string; is_enabled: boolean; address: string | null; phone: string | null; notes: string | null; cities?: City };
 type Presence = { branch_id: string; status: string; last_seen_at: string };
 type Staff = { user_id: string; display_name: string; username: string | null; role: string; branch_id: string | null; is_active: boolean };
 type Order = { id: string; branch_id: string; order_number: number; order_type: string; table_number: number | null; total: number; status: string; payment_method: string | null; created_at: string; paid_at: string | null; cancelled_at: string | null; cancellation_reason: string | null };
@@ -58,7 +58,9 @@ export default function App() {
   const [cancelReason, setCancelReason] = useState('');
   const [cancelItemId, setCancelItemId] = useState('');
   const [cancelQuantity, setCancelQuantity] = useState('1');
-  const [branchForm, setBranchForm] = useState({ city_id: '', branch_code: '', branch_name: '', address: '' });
+  const [branchForm, setBranchForm] = useState({ city_id: '', branch_code: '', branch_name: '', address: '', phone: '', notes: '' });
+  const [editingBranch, setEditingBranch] = useState<Branch | null>(null);
+  const [branchEditForm, setBranchEditForm] = useState({ city_id: '', branch_code: '', branch_name: '', address: '', phone: '', notes: '' });
   const [staffForm, setStaffForm] = useState({ username: '', password: '', display_name: '', role: 'cashier', branch_id: '' });
 
   const isCentral = profile?.role === 'central_admin';
@@ -78,7 +80,7 @@ export default function App() {
 
   const loadData = useCallback(async (p: Profile) => {
     const branchFilter = !isCentral && p.branch_id ? p.branch_id : undefined;
-    let branchQuery = supabase.from('branches').select('id,city_id,branch_code,branch_name,is_enabled,address,cities(id,name,plate_code)').order('branch_name');
+    let branchQuery = supabase.from('branches').select('id,city_id,branch_code,branch_name,is_enabled,address,phone,notes,cities(id,name,plate_code)').order('branch_name');
     if (branchFilter) branchQuery = branchQuery.eq('id', branchFilter);
     const [b, c, pr, st, o, ex, cats, prods, bp] = await Promise.all([
       branchQuery,
@@ -175,10 +177,11 @@ export default function App() {
     e.preventDefault(); setBusy(true); setError(''); setNotice('');
     const { error: e2 } = await supabase.from('branches').insert({
       city_id: Number(branchForm.city_id), branch_code: branchForm.branch_code.trim().toUpperCase(),
-      branch_name: branchForm.branch_name.trim(), address: branchForm.address.trim() || null
+      branch_name: branchForm.branch_name.trim(), address: branchForm.address.trim() || null,
+      phone: branchForm.phone.trim() || null, notes: branchForm.notes.trim() || null
     });
     if (e2) setError(e2.message);
-    else { setNotice('Şube oluşturuldu.'); setBranchForm({ city_id: '', branch_code: '', branch_name: '', address: '' }); await refresh(); }
+    else { setNotice('Şube oluşturuldu.'); setBranchForm({ city_id: '', branch_code: '', branch_name: '', address: '', phone: '', notes: '' }); await refresh(); }
     setBusy(false);
   }
 
@@ -280,6 +283,33 @@ export default function App() {
     if (e) setError(e.message); else { setNotice(product.is_active ? 'Ürün satışa kapatıldı.' : 'Ürün yeniden satışa açıldı.'); await refresh(); }
   }
 
+  function startBranchEdit(branch: Branch) {
+    setEditingBranch(branch);
+    setBranchEditForm({ city_id: String(branch.city_id), branch_code: branch.branch_code, branch_name: branch.branch_name, address: branch.address || '', phone: branch.phone || '', notes: branch.notes || '' });
+    setError(''); setNotice('');
+  }
+
+  async function updateBranch(e: React.FormEvent) {
+    e.preventDefault();
+    if (!editingBranch) return;
+    if (!branchEditForm.city_id || !branchEditForm.branch_code.trim() || !branchEditForm.branch_name.trim()) {
+      setError('İl, şube kodu ve şube adı zorunludur.'); return;
+    }
+    setBusy(true); setError(''); setNotice('');
+    const { error: updateError } = await supabase.from('branches').update({
+      city_id: Number(branchEditForm.city_id),
+      branch_code: branchEditForm.branch_code.trim().toUpperCase(),
+      branch_name: branchEditForm.branch_name.trim(),
+      address: branchEditForm.address.trim() || null,
+      phone: branchEditForm.phone.trim() || null,
+      notes: branchEditForm.notes.trim() || null,
+      updated_at: new Date().toISOString()
+    }).eq('id', editingBranch.id);
+    if (updateError) setError(updateError.message);
+    else { setNotice('Şube bilgileri güncellendi.'); setEditingBranch(null); await refresh(); }
+    setBusy(false);
+  }
+
   async function toggleBranch(branch: Branch) {
     const { error: e } = await supabase.from('branches').update({ is_enabled: !branch.is_enabled }).eq('id', branch.id);
     if (e) setError(e.message); else { setNotice(branch.is_enabled ? 'Şube devre dışı bırakıldı.' : 'Şube yeniden etkinleştirildi.'); await refresh(); }
@@ -357,12 +387,24 @@ export default function App() {
               <label>Şube kodu<input required value={branchForm.branch_code} onChange={e => setBranchForm({ ...branchForm, branch_code: e.target.value })} placeholder="Örn. MRS-001"/></label>
               <label>Şube adı<input required value={branchForm.branch_name} onChange={e => setBranchForm({ ...branchForm, branch_name: e.target.value })} placeholder="Örn. Mersin Marina"/></label>
               <label>Adres <input value={branchForm.address} onChange={e => setBranchForm({ ...branchForm, address: e.target.value })} placeholder="Şube adresi (isteğe bağlı)"/></label>
+              <label>Telefon <input value={branchForm.phone} onChange={e => setBranchForm({ ...branchForm, phone: e.target.value })} placeholder="Şube telefon numarası (isteğe bağlı)"/></label>
+              <label>Notlar <textarea value={branchForm.notes} onChange={e => setBranchForm({ ...branchForm, notes: e.target.value })} placeholder="Şubeye özel notlar (isteğe bağlı)" rows={3}/></label>
               <button className="btn primary" disabled={busy}><Plus size={17}/> Şubeyi Kaydet</button>
             </form>
           </section>
           <section className="surface"><div className="section-head"><div><h2>Kayıtlı şubeler</h2><p>{branches.length} şube kayıtlı.</p></div></div>
+            {editingBranch && <form className="stack-form branch-edit-form" onSubmit={updateBranch}>
+              <div className="section-head"><div><h2>Şube bilgilerini düzenle</h2><p>{editingBranch.branch_name}</p></div><button type="button" className="btn outline mini" onClick={() => setEditingBranch(null)}>Vazgeç</button></div>
+              <label>İl<select required value={branchEditForm.city_id} onChange={e => setBranchEditForm({ ...branchEditForm, city_id: e.target.value })}><option value="">İl seçin</option>{cities.map(c => <option key={c.id} value={c.id}>{String(c.plate_code).padStart(2,'0')} • {c.name}</option>)}</select></label>
+              <label>Şube kodu<input required value={branchEditForm.branch_code} onChange={e => setBranchEditForm({ ...branchEditForm, branch_code: e.target.value })}/></label>
+              <label>Şube adı<input required value={branchEditForm.branch_name} onChange={e => setBranchEditForm({ ...branchEditForm, branch_name: e.target.value })}/></label>
+              <label>Adres<input value={branchEditForm.address} onChange={e => setBranchEditForm({ ...branchEditForm, address: e.target.value })}/></label>
+              <label>Telefon<input value={branchEditForm.phone} onChange={e => setBranchEditForm({ ...branchEditForm, phone: e.target.value })}/></label>
+              <label>Notlar<textarea rows={3} value={branchEditForm.notes} onChange={e => setBranchEditForm({ ...branchEditForm, notes: e.target.value })}/></label>
+              <button className="btn primary" disabled={busy}>Değişiklikleri Kaydet</button>
+            </form>}
             <div className="branch-list">
-              {branches.map(branch => { const s = statusFor(branch); return <div className="branch-row branch-row-wrap" key={branch.id}><div className="branch-symbol"><MapPin size={18}/></div><div className="branch-main"><b>{branch.branch_name}</b><small>{branch.cities?.name} • {branch.branch_code}</small><span className={'status '+s.kind}>{s.icon}{s.label}</span></div><button className={'btn mini ' + (branch.is_enabled ? 'danger' : 'outline')} onClick={() => toggleBranch(branch)}>{branch.is_enabled ? 'Devre dışı bırak' : 'Etkinleştir'}</button></div>; })}
+              {branches.map(branch => { const s = statusFor(branch); return <div className="branch-row branch-row-wrap" key={branch.id}><div className="branch-symbol"><MapPin size={18}/></div><div className="branch-main"><b>{branch.branch_name}</b><small>{branch.cities?.name} • {branch.branch_code}</small><span className={'status '+s.kind}>{s.icon}{s.label}</span></div><button className="btn mini outline" onClick={() => startBranchEdit(branch)}>Düzenle</button><button className={'btn mini ' + (branch.is_enabled ? 'danger' : 'outline')} onClick={() => toggleBranch(branch)}>{branch.is_enabled ? 'Devre dışı bırak' : 'Etkinleştir'}</button></div>; })}
               {!branches.length && <div className="empty">Şube kaydı bulunmuyor.</div>}
             </div>
           </section>
