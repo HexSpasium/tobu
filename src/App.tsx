@@ -14,7 +14,7 @@ type Category = { id: string; name: string; sort_order: number; is_active: boole
 type Product = { id: string; category_id: string | null; name: string; description: string | null; base_price: number; is_active: boolean; sort_order: number; owner_branch_id: string | null };
 type BranchProduct = { branch_id: string; product_id: string; is_available: boolean; sale_price: number | null; custom_name: string | null; custom_description: string | null };
 type CartLine = { product: Product; quantity: number };
-type Expense = { id: string; branch_id: string; category: string; description: string | null; amount: number; expense_date: string; entered_by: string | null; created_at: string; edited_at: string | null; edited_by: string | null };
+type Expense = { id: string; branch_id: string; category: string; description: string | null; amount: number; expense_date: string; entered_by: string | null; created_at: string; edited_at: string | null; edited_by: string | null; is_cancelled: boolean; cancelled_at: string | null; cancelled_by: string | null; cancellation_reason: string | null };
 const money = (v: number) => new Intl.NumberFormat('tr-TR', { style: 'currency', currency: 'TRY', maximumFractionDigits: 0 }).format(v || 0);
 const dateKey = () => new Date().toLocaleDateString('en-CA');
 const deviceId = () => {
