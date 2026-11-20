@@ -8,7 +8,7 @@ type Branch = { id: string; city_id: number; branch_code: string; branch_name: s
 type Presence = { branch_id: string; status: string; last_seen_at: string };
 type Staff = { user_id: string; display_name: string; username: string | null; role: string; branch_id: string | null; is_active: boolean };
 type Order = { id: string; branch_id: string; order_number: number; order_type: string; table_number: number | null; total: number; status: string; payment_method: string | null; created_at: string; paid_at: string | null; cancelled_at: string | null; cancellation_reason: string | null };
-type OrderItem = { id: string; product_name: string; quantity: number; cancelled_quantity: number; unit_price: number; line_total: number };
+type OrderItem = { id: string; product_name: string; quantity: number; cancelled_quantity: number; unit_price: number; line_total: number };\ntype OrderCancellation = { id: string; action_type: string; product_name: string | null; quantity: number | null; amount: number; reason: string; created_at: string };
 type Category = { id: string; name: string; sort_order: number; is_active: boolean };
 type Product = { id: string; category_id: string | null; name: string; description: string | null; base_price: number; is_active: boolean; sort_order: number };
 type BranchProduct = { branch_id: string; product_id: string; is_available: boolean; sale_price: number | null };
@@ -52,7 +52,7 @@ export default function App() {
   const [categoryName, setCategoryName] = useState('');
   const [productForm, setProductForm] = useState({ name: '', category_id: '', base_price: '', description: '' });
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
-  const [selectedItems, setSelectedItems] = useState<OrderItem[]>([]);
+  const [selectedItems, setSelectedItems] = useState<OrderItem[]>([]);\n  const [selectedCancellations, setSelectedCancellations] = useState<OrderCancellation[]>([]);
   const [cancelReason, setCancelReason] = useState('');
   const [cancelItemId, setCancelItemId] = useState('');
   const [cancelQuantity, setCancelQuantity] = useState('1');
@@ -245,9 +245,13 @@ export default function App() {
 
   async function openOrder(order: Order) {
     setSelectedOrder(order); setSelectedItems([]); setCancelReason(''); setCancelItemId(''); setCancelQuantity('1');
-    const { data, error: e } = await supabase.from('order_items').select('id,product_name,quantity,cancelled_quantity,unit_price,line_total').eq('order_id', order.id).order('created_at');
-    if (e) { setError(e.message); setSelectedOrder(null); return; }
-    setSelectedItems((data || []) as OrderItem[]);
+    const [itemsResult, auditResult] = await Promise.all([
+      supabase.from('order_items').select('id,product_name,quantity,cancelled_quantity,unit_price,line_total').eq('order_id', order.id).order('created_at'),
+      isCentral ? supabase.from('order_cancellations').select('id,action_type,product_name,quantity,amount,reason,created_at').eq('order_id', order.id).order('created_at', { ascending: false }) : Promise.resolve({ data: [], error: null })
+    ]);
+    if (itemsResult.error || auditResult.error) { setError(itemsResult.error?.message || auditResult.error?.message || 'Satış ayrıntıları alınamadı.'); setSelectedOrder(null); return; }
+    setSelectedItems((itemsResult.data || []) as OrderItem[]);
+    setSelectedCancellations((auditResult.data || []) as OrderCancellation[]);
   }
 
   async function cancelWholeOrder() {
@@ -403,6 +407,7 @@ export default function App() {
       {selectedOrder && <div className="modal-backdrop" onClick={() => setSelectedOrder(null)}><section className="surface cancel-modal" onClick={e => e.stopPropagation()}><div className="section-head"><div><span className="eyebrow">SATIŞ DETAYI</span><h2>İşlem #{selectedOrder.order_number}</h2><p>{selectedOrder.status === 'cancelled' ? 'Bu satış iptal edilmiş.' : 'Ürünleri ayrı ayrı veya satışı tamamen iptal edebilirsiniz.'}</p></div><button className="icon-action" onClick={() => setSelectedOrder(null)}>×</button></div>
         <div className="cancel-items">{selectedItems.map(item => { const remaining = Number(item.quantity)-Number(item.cancelled_quantity); return <div className="cancel-item" key={item.id}><div className="branch-main"><b>{item.product_name}</b><small>Satılan: {item.quantity} • Önceden iptal: {item.cancelled_quantity} • Kalan: {remaining}</small></div><strong>{money(Number(item.unit_price)*remaining)}</strong>{selectedOrder.status === 'paid' && remaining > 0 && isCentral && <button className="btn mini danger" onClick={() => {setCancelItemId(item.id);setCancelQuantity(String(remaining));setCancelReason('');}}>Ürünü iptal et</button>}</div>; })}</div>
         {selectedOrder.status === 'cancelled' && <div className="alert error">İptal nedeni: {selectedOrder.cancellation_reason || 'Belirtilmemiş'}</div>}
+        {isCentral && selectedCancellations.length > 0 && <div className="cancel-audit"><b>İptal geçmişi</b>{selectedCancellations.map(entry => <div className="audit-row" key={entry.id}><span>{entry.action_type === 'order_cancel' ? 'Satışın tamamı iptal edildi' : (entry.product_name || 'Ürün') + ' • ' + entry.quantity + ' adet iptal'}</span><strong>{money(Number(entry.amount))}</strong><small>{entry.reason} • {new Date(entry.created_at).toLocaleString('tr-TR')}</small></div>)}</div>}
         {selectedOrder.status === 'paid' && isCentral && <div className="cancel-actions"><label>İptal nedeni<input value={cancelReason} onChange={e => setCancelReason(e.target.value)} placeholder="Örn. Müşteri siparişi geri çekti"/></label>{cancelItemId && <label>İptal edilecek miktar<input type="number" min="0.001" step="0.001" max={selectedItems.find(x=>x.id===cancelItemId) ? Number(selectedItems.find(x=>x.id===cancelItemId)!.quantity)-Number(selectedItems.find(x=>x.id===cancelItemId)!.cancelled_quantity) : 1} value={cancelQuantity} onChange={e => setCancelQuantity(e.target.value)}/></label>}<div className="cancel-button-row">{cancelItemId && <button className="btn primary" disabled={busy || cancelReason.trim().length<3} onClick={cancelOneItem}>Seçili miktarı iptal et</button>}<button className="btn danger" disabled={busy || cancelReason.trim().length<3} onClick={cancelWholeOrder}>Satışın tamamını iptal et</button></div></div>}
       </section></div>}
     </main>
