@@ -14,7 +14,7 @@ type Category = { id: string; name: string; sort_order: number; is_active: boole
 type Product = { id: string; category_id: string | null; name: string; description: string | null; base_price: number; is_active: boolean; sort_order: number; owner_branch_id: string | null };
 type BranchProduct = { branch_id: string; product_id: string; is_available: boolean; sale_price: number | null; custom_name: string | null; custom_description: string | null };
 type CartLine = { product: Product; quantity: number };
-type Expense = { branch_id: string; amount: number; expense_date: string };
+type Expense = { id: string; branch_id: string; category: string; description: string | null; amount: number; expense_date: string; entered_by: string | null; created_at: string };
 const money = (v: number) => new Intl.NumberFormat('tr-TR', { style: 'currency', currency: 'TRY', maximumFractionDigits: 0 }).format(v || 0);
 const dateKey = () => new Date().toLocaleDateString('en-CA');
 const deviceId = () => {
@@ -32,12 +32,13 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
-  const [tab, setTab] = useState<'overview' | 'branches' | 'staff' | 'pos' | 'menu'>('overview');
+  const [tab, setTab] = useState<'overview' | 'branches' | 'staff' | 'pos' | 'menu' | 'expenses'>('overview');
   const [branches, setBranches] = useState<Branch[]>([]);
   const [presence, setPresence] = useState<Presence[]>([]);
   const [staff, setStaff] = useState<Staff[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [expenseForm, setExpenseForm] = useState({ category: 'Satın alınan ürün', description: '', amount: '', expense_date: dateKey() });
   const [cities, setCities] = useState<City[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
@@ -97,7 +98,7 @@ export default function App() {
       supabase.from('branch_presence').select('branch_id,status,last_seen_at').order('last_seen_at', { ascending: false }),
       supabase.from('staff_profiles').select('user_id,display_name,username,role,branch_id,is_active').order('display_name'),
       (() => { let q = supabase.from('orders').select('id,branch_id,order_number,order_type,table_number,total,status,payment_method,created_at,paid_at,cancelled_at,cancellation_reason').order('created_at', { ascending: false }).limit(500); if (branchFilter) q = q.eq('branch_id', branchFilter); return q; })(),
-      (() => { let q = supabase.from('expenses').select('branch_id,amount,expense_date').order('expense_date', { ascending: false }).limit(500); if (branchFilter) q = q.eq('branch_id', branchFilter); return q; })(),
+      (() => { let q = supabase.from('expenses').select('id,branch_id,category,description,amount,expense_date,entered_by,created_at').order('expense_date', { ascending: false }).order('created_at', { ascending: false }).limit(1000); if (branchFilter) q = q.eq('branch_id', branchFilter); return q; })(),
       supabase.from('categories').select('id,name,sort_order,is_active').eq('is_active', true).order('sort_order'),
       supabase.from('products').select('id,category_id,name,description,base_price,is_active,sort_order,owner_branch_id').order('sort_order').order('name'),
       (() => { let q = supabase.from('branch_products').select('branch_id,product_id,is_available,sale_price,custom_name,custom_description'); if (branchFilter) q = q.eq('branch_id', branchFilter); return q; })()
@@ -180,6 +181,31 @@ export default function App() {
         .eq('branch_id', profile.branch_id).eq('user_id', sessionUser).eq('device_id', deviceId());
     }
     await supabase.auth.signOut(); setProfile(null); setSessionUser(null);
+  }
+
+  async function createExpense(e: React.FormEvent) {
+    e.preventDefault();
+    if (!profile?.branch_id || !isBranchManager) return;
+    const amount = Number(expenseForm.amount);
+    if (!expenseForm.description.trim() || !Number.isFinite(amount) || amount <= 0 || !expenseForm.expense_date) {
+      setError('Açıklama, geçerli tutar ve tarih girin.'); return;
+    }
+    setBusy(true); setError(''); setNotice('');
+    const { error: saveError } = await supabase.from('expenses').insert({
+      branch_id: profile.branch_id,
+      category: expenseForm.category,
+      description: expenseForm.description.trim(),
+      amount,
+      expense_date: expenseForm.expense_date,
+      entered_by: sessionUser
+    });
+    if (saveError) setError(saveError.message);
+    else {
+      setNotice('Gider kaydı oluşturuldu ve gider listesine eklendi.');
+      setExpenseForm({ category: 'Satın alınan ürün', description: '', amount: '', expense_date: dateKey() });
+      await refresh();
+    }
+    setBusy(false);
   }
 
   async function createBranch(e: React.FormEvent) {
@@ -518,6 +544,7 @@ export default function App() {
       <button className={'nav-link ' + (tab === 'overview' ? 'active' : '')} onClick={() => setTab('overview')}><Activity size={18}/> Genel Bakış</button>
       <button className={'nav-link ' + (tab === 'pos' ? 'active' : '')} onClick={() => setTab('pos')}><ShoppingCart size={18}/> POS / Satış</button>
       {(isCentral || isBranchManager) && <button className={'nav-link ' + (tab === 'menu' ? 'active' : '')} onClick={() => setTab('menu')}><PackagePlus size={18}/> Menü Yönetimi</button>}
+      {(isCentral || isBranchManager) && <button className={'nav-link ' + (tab === 'expenses' ? 'active' : '')} onClick={() => setTab('expenses')}><Receipt size={18}/> Giderler</button>}
       {isCentral && <button className={'nav-link ' + (tab === 'branches' ? 'active' : '')} onClick={() => setTab('branches')}><Building2 size={18}/> Şubeler</button>}
       {isCentral && <button className={'nav-link ' + (tab === 'staff' ? 'active' : '')} onClick={() => setTab('staff')}><Users size={18}/> Kullanıcılar</button>}
       {!isCentral && <button className={'nav-link ' + (tab === 'staff' ? 'active' : '')} onClick={() => setTab('staff')}><ShieldCheck size={18}/> Parola Talebi</button>}
@@ -528,7 +555,7 @@ export default function App() {
       </div>
     </aside>
     <main className="main-area">
-      <header className="topbar"><div><span className="crumb">TOBU / </span><b>{tab === 'overview' ? 'Genel Bakış' : tab === 'branches' ? 'Şube Yönetimi' : tab === 'staff' ? 'Kullanıcı Yönetimi' : tab === 'pos' ? 'POS / Satış' : 'Menü Yönetimi'}</b><small>{new Date().toLocaleDateString('tr-TR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</small></div><div className="topbar-actions"><span className="secure"><ShieldCheck size={15}/> Güvenli oturum</span><button className="icon-action" onClick={refresh} title="Yenile"><RefreshCw size={17}/></button></div></header>
+      <header className="topbar"><div><span className="crumb">TOBU / </span><b>{tab === 'overview' ? 'Genel Bakış' : tab === 'branches' ? 'Şube Yönetimi' : tab === 'staff' ? 'Kullanıcı Yönetimi' : tab === 'pos' ? 'POS / Satış' : tab === 'expenses' ? 'Giderler' : 'Menü Yönetimi'}</b><small>{new Date().toLocaleDateString('tr-TR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</small></div><div className="topbar-actions"><span className="secure"><ShieldCheck size={15}/> Güvenli oturum</span><button className="icon-action" onClick={refresh} title="Yenile"><RefreshCw size={17}/></button></div></header>
       <div className="content">
         {error && <div className="alert error"><CircleAlert size={16}/>{error}<button onClick={() => setError('')}>×</button></div>}
         {notice && <div className="alert success"><CheckCircle2 size={16}/>{notice}<button onClick={() => setNotice('')}>×</button></div>}
@@ -630,6 +657,20 @@ export default function App() {
               })}
               {!products.some(p => p.is_active && (!p.owner_branch_id || p.owner_branch_id === myBranch.id)) && <div className="empty">Henüz ürün bulunmuyor.</div>}
             </div>
+          </section>
+        </div>}
+        {tab === 'expenses' && (isCentral || isBranchManager) && <div className="expenses-page">
+          <div className="page-heading"><div><span className="eyebrow">{isCentral ? 'MERKEZ FİNANS TAKİBİ' : 'ŞUBE GİDER KAYDI'}</span><h1>{isCentral ? 'Şubelerin gider ve masrafları' : 'Şube giderleri'}</h1><p>{isCentral ? 'Tüm şubelerin kaydettiği masrafları tarih ve şube bazında görüntüleyin.' : 'Satın alma, bakım, temizlik ve fatura giderlerinizi açıklamasıyla kaydedin.'}</p></div></div>
+          {isBranchManager && <section className="surface expense-form-card"><div className="section-head"><div><h2>Yeni gider kaydı</h2><p>Kaydettiğiniz masraf anında gider listesine eklenir.</p></div></div>
+            <form className="stack-form expense-form" onSubmit={createExpense}>
+              <label>Gider kategorisi<select value={expenseForm.category} onChange={e=>setExpenseForm({...expenseForm,category:e.target.value})}><option>Satın alınan ürün</option><option>Bakım onarım</option><option>Temizlik ve hijyen</option><option>Faturalar</option></select></label>
+              <label>Açıklama<input required maxLength={500} value={expenseForm.description} onChange={e=>setExpenseForm({...expenseForm,description:e.target.value})} placeholder="Örn. Mutfak için endüstriyel temizlik ürünü"/></label>
+              <div className="expense-fields"><label>Tutar (₺)<input required type="number" min="0.01" step="0.01" value={expenseForm.amount} onChange={e=>setExpenseForm({...expenseForm,amount:e.target.value})} placeholder="0,00"/></label><label>Gider tarihi<input required type="date" value={expenseForm.expense_date} onChange={e=>setExpenseForm({...expenseForm,expense_date:e.target.value})}/></label></div>
+              <button className="btn primary" disabled={busy}><Plus size={16}/> Gideri Kaydet</button>
+            </form>
+          </section>}
+          <section className="surface expense-list-card"><div className="section-head"><div><h2>{isCentral ? 'Tüm şube giderleri' : 'Kaydedilen giderler'}</h2><p>{expenses.length} kayıt • Toplam {money(expenses.reduce((sum,x)=>sum+Number(x.amount),0))}</p></div><button className="btn mini outline" onClick={refresh}><RefreshCw size={14}/> Yenile</button></div>
+            {expenses.length ? <div className="expense-list">{expenses.map(expense=>{const branch=branches.find(b=>b.id===expense.branch_id);return <article className="expense-row" key={expense.id}><div className="expense-icon"><Receipt size={17}/></div><div className="expense-main"><b>{expense.category}</b><p>{expense.description || 'Açıklama girilmemiş'}</p><small>{branch?.branch_name || 'Şube'} • {new Date(expense.expense_date+'T12:00:00').toLocaleDateString('tr-TR')} • Kayıt: {new Date(expense.created_at).toLocaleTimeString('tr-TR',{hour:'2-digit',minute:'2-digit'})}</small></div><strong>{money(Number(expense.amount))}</strong></article>})}</div> : <div className="empty">Henüz gider kaydı bulunmuyor.</div>}
           </section>
         </div>}
         {tab === 'staff' && !isCentral && <section className="surface"><div className="section-head"><div><h2>Parola değişikliği talebi</h2><p>Talebiniz yalnızca TOBU Merkez Yönetici tarafından değerlendirilir.</p></div></div><form className="stack-form" onSubmit={submitPasswordRequest}><label>Açıklama (isteğe bağlı)<textarea rows={3} value={passwordRequest} onChange={e=>setPasswordRequest(e.target.value)} placeholder="Parola yenileme talebinizi yazın"/></label><button className="btn primary" disabled={busy}>Merkez yönetime talep gönder</button></form></section>}
