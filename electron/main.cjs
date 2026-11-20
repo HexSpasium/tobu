@@ -9,6 +9,9 @@ function createWindow() {
     minHeight: 720,
     backgroundColor: '#17130f',
     title: 'TOBU POS',
+    icon: app.isPackaged
+      ? path.join(process.resourcesPath, 'tobu.ico')
+      : path.join(__dirname, '..', 'build', 'tobu.ico'),
     autoHideMenuBar: true,
     webPreferences: {
       contextIsolation: true,
