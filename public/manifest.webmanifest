@@ -1,0 +1,9 @@
+{
+  "name": "TOBU POS",
+  "short_name": "TOBU",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#17130f",
+  "theme_color": "#17130f",
+  "icons": [{ "src": "/tobu.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
+}
