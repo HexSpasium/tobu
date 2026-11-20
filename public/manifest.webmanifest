@@ -1,9 +1,13 @@
 {
-  "name": "TOBU POS",
-  "short_name": "TOBU",
+  "name": "TOBU Çiğ Köfte POS",
+  "short_name": "TOBU POS",
+  "description": "TOBU sipariş, masa ve satış yönetimi",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
   "background_color": "#17130f",
   "theme_color": "#17130f",
-  "icons": [{ "src": "/tobu.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
+  "icons": [
+    { "src": "/tobu.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
 }
