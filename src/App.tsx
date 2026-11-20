@@ -8,7 +8,8 @@ type Branch = { id: string; city_id: number; branch_code: string; branch_name: s
 type Presence = { branch_id: string; status: string; last_seen_at: string };
 type Staff = { user_id: string; display_name: string; username: string | null; role: string; branch_id: string | null; is_active: boolean };
 type Order = { id: string; branch_id: string; order_number: number; order_type: string; table_number: number | null; total: number; status: string; payment_method: string | null; created_at: string; paid_at: string | null; cancelled_at: string | null; cancellation_reason: string | null };
-type OrderItem = { id: string; product_name: string; quantity: number; cancelled_quantity: number; unit_price: number; line_total: number };\ntype OrderCancellation = { id: string; action_type: string; product_name: string | null; quantity: number | null; amount: number; reason: string; created_at: string };
+type OrderItem = { id: string; product_name: string; quantity: number; cancelled_quantity: number; unit_price: number; line_total: number };
+type OrderCancellation = { id: string; action_type: string; product_name: string | null; quantity: number | null; amount: number; reason: string; created_at: string };
 type Category = { id: string; name: string; sort_order: number; is_active: boolean };
 type Product = { id: string; category_id: string | null; name: string; description: string | null; base_price: number; is_active: boolean; sort_order: number };
 type BranchProduct = { branch_id: string; product_id: string; is_available: boolean; sale_price: number | null };
@@ -52,7 +53,8 @@ export default function App() {
   const [categoryName, setCategoryName] = useState('');
   const [productForm, setProductForm] = useState({ name: '', category_id: '', base_price: '', description: '' });
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
-  const [selectedItems, setSelectedItems] = useState<OrderItem[]>([]);\n  const [selectedCancellations, setSelectedCancellations] = useState<OrderCancellation[]>([]);
+  const [selectedItems, setSelectedItems] = useState<OrderItem[]>([]);
+  const [selectedCancellations, setSelectedCancellations] = useState<OrderCancellation[]>([]);
   const [cancelReason, setCancelReason] = useState('');
   const [cancelItemId, setCancelItemId] = useState('');
   const [cancelQuantity, setCancelQuantity] = useState('1');
