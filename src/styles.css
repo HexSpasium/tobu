@@ -100,6 +100,9 @@
 .cancel-item .branch-main b{font-size:11px}
 .cancel-item .branch-main small{font-size:9px}
 .cancel-item>strong{font:800 11px Manrope;white-space:nowrap}
+.order-item-edit{display:flex;align-items:flex-end;gap:6px;flex:0 0 auto}
+.order-item-edit label{display:grid;gap:4px;font-size:9px;font-weight:700;color:#68717b}
+.order-item-edit input{width:76px;border:1px solid #e1e4e9;border-radius:7px;padding:7px;font-size:10px;color:var(--ink)}
 .cancel-actions{border-top:1px solid #eceef1;padding-top:16px;display:grid;gap:12px}
 .cancel-actions label{display:grid;gap:7px;font-size:10px;font-weight:700;color:#59616b}
 .cancel-actions input{width:100%;border:1px solid #e1e4e9;border-radius:9px;padding:11px 12px;font-size:11px;color:var(--ink)}
