@@ -206,3 +206,60 @@ button,input,select,textarea { min-width:0; }
   .surface { padding:13px; }
   .page-heading h1 { font-size:20px; }
 }
+
+
+/* Native-feeling phone navigation and compact dashboard */
+@media (max-width:700px) {
+  .sidebar {
+    inset:auto 0 0 0;
+    width:100%;
+    height:auto;
+    min-height:calc(58px + env(safe-area-inset-bottom, 0px));
+    padding:6px 5px calc(6px + env(safe-area-inset-bottom, 0px));
+    flex-direction:row;
+    align-items:center;
+    justify-content:space-around;
+    gap:2px;
+    overflow-x:auto;
+    overflow-y:hidden;
+    border-top:1px solid #ffffff18;
+  }
+  .brand-lockup.side,.nav-caption,.sidebar-bottom .signed-user,.build-label { display:none !important; }
+  .sidebar > .nav-link,
+  .sidebar-bottom > .nav-link {
+    display:flex;
+    flex:1 0 0;
+    width:auto;
+    min-width:0;
+    min-height:44px;
+    height:44px;
+    margin:0;
+    padding:7px 3px;
+    justify-content:center;
+    align-items:center;
+    border-radius:9px;
+    font-size:0;
+  }
+  .sidebar .nav-link svg { width:20px; height:20px; flex:0 0 20px; }
+  .sidebar-bottom { display:contents; margin:0; }
+  .sidebar .nav-link.logout { color:#e0a6ad; }
+  .main-area { margin-left:0 !important; width:100%; min-width:0; padding-bottom:calc(62px + env(safe-area-inset-bottom, 0px)); }
+  .topbar { width:100%; min-width:0; }
+  .content { width:100%; max-width:100%; padding-left:14px; padding-right:14px; }
+  .page-heading { width:100%; min-width:0; }
+  .page-heading > div:first-child { width:100%; min-width:0; }
+  .page-heading h1 { max-width:100%; white-space:normal; overflow-wrap:break-word; word-break:normal; font-size:clamp(19px,5.5vw,24px); line-height:1.2; }
+  .page-heading p { max-width:100%; overflow-wrap:anywhere; }
+  .live-pill { align-self:flex-start; }
+  .branch-row { display:grid; grid-template-columns:34px minmax(0,1fr) auto; align-items:center; }
+  .branch-row .status { grid-column:2; white-space:normal; }
+  .branch-row .branch-revenue { grid-column:3; grid-row:1 / span 2; min-width:0; }
+}
+@media (max-width:380px) {
+  .content { padding-left:11px; padding-right:11px; }
+  .metric-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .metric-card { padding:10px; }
+  .metric-top { font-size:9px; }
+  .sidebar { gap:0; }
+  .sidebar .nav-link { padding-left:1px; padding-right:1px; }
+}
