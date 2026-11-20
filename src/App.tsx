@@ -239,6 +239,31 @@ export default function App() {
     setBusy(false);
   }
 
+  async function cancelExpense(expense: Expense) {
+    if (!isBranchManager || expense.is_cancelled) return;
+    const reason = window.prompt('Bu gideri iptal etme nedeninizi yazın:');
+    if (reason === null) return;
+    if (reason.trim().length < 3) { setError('İptal nedeni en az 3 karakter olmalı.'); return; }
+    setBusy(true); setError(''); setNotice('');
+    const { data, error: cancelError } = await supabase.from('expenses').update({
+      is_cancelled: true, cancelled_at: new Date().toISOString(), cancelled_by: sessionUser, cancellation_reason: reason.trim()
+    }).eq('id', expense.id).eq('branch_id', profile?.branch_id).eq('is_cancelled', false).select('id').maybeSingle();
+    if (cancelError) setError(cancelError.message);
+    else if (!data) setError('Gider bulunamadı veya daha önce iptal edilmiş.');
+    else { setNotice('Gider iptal edildi. Merkez yönetici iptal kaydını görebilir.'); await refresh(); }
+    setBusy(false);
+  }
+
+  async function permanentlyDeleteExpense(expense: Expense) {
+    if (!isCentral || !expense.is_cancelled) return;
+    if (!window.confirm('Bu iptal edilmiş gider kaydı kalıcı olarak silinecek. Bu işlem geri alınamaz. Devam edilsin mi?')) return;
+    setBusy(true); setError(''); setNotice('');
+    const { error: deleteError } = await supabase.from('expenses').delete().eq('id', expense.id).eq('is_cancelled', true);
+    if (deleteError) setError(deleteError.message);
+    else { setNotice('İptal edilmiş gider kaydı kalıcı olarak silindi.'); await refresh(); }
+    setBusy(false);
+  }
+
   async function createBranch(e: React.FormEvent) {
     e.preventDefault(); setBusy(true); setError(''); setNotice('');
     const { error: e2 } = await supabase.from('branches').insert({
@@ -706,8 +731,8 @@ export default function App() {
             <div className="expense-fields"><label>Tutar (₺)<input required type="number" min="0.01" step="0.01" value={expenseEditForm.amount} onChange={e=>setExpenseEditForm({...expenseEditForm,amount:e.target.value})}/></label><label>Gider tarihi<input required type="date" value={expenseEditForm.expense_date} onChange={e=>setExpenseEditForm({...expenseEditForm,expense_date:e.target.value})}/></label></div>
             <button className="btn primary" disabled={busy}>Değişiklikleri Kaydet</button>
           </form></section>}
-          <section className="surface expense-list-card"><div className="section-head"><div><h2>{isCentral ? 'Tüm şube giderleri' : 'Kaydedilen giderler'}</h2><p>{expenses.length} kayıt • Toplam {money(expenses.reduce((sum,x)=>sum+Number(x.amount),0))}</p></div><button className="btn mini outline" onClick={refresh}><RefreshCw size={14}/> Yenile</button></div>
-            {expenses.length ? <div className="expense-list">{expenses.map(expense=>{const branch=branches.find(b=>b.id===expense.branch_id);return <article className="expense-row" key={expense.id}><div className="expense-icon"><Receipt size={17}/></div><div className="expense-main"><b>{expense.category}</b><p>{expense.description || 'Açıklama girilmemiş'}</p><small>{branch?.branch_name || 'Şube'} • {new Date(expense.expense_date+'T12:00:00').toLocaleDateString('tr-TR')} • Kayıt: {new Date(expense.created_at).toLocaleString('tr-TR')}</small>{expense.edited_at && <div className="expense-edited-label">Sonradan düzenlendi • {new Date(expense.edited_at).toLocaleString('tr-TR')}</div>}</div><strong>{money(Number(expense.amount))}</strong>{isBranchManager && <button type="button" className="btn mini outline" onClick={()=>startExpenseEdit(expense)}>Düzenle</button>}</article>})}</div> : <div className="empty">Henüz gider kaydı bulunmuyor.</div>}
+          <section className="surface expense-list-card"><div className="section-head"><div><h2>{isCentral ? 'Tüm şube giderleri' : 'Kaydedilen giderler'}</h2><p>{expenses.length} kayıt • Aktif toplam {money(expenses.filter(x=>!x.is_cancelled).reduce((sum,x)=>sum+Number(x.amount),0))} • İptal: {expenses.filter(x=>x.is_cancelled).length}</p></div><button className="btn mini outline" onClick={refresh}><RefreshCw size={14}/> Yenile</button></div>
+            {expenses.length ? <div className="expense-list">{expenses.map(expense=>{const branch=branches.find(b=>b.id===expense.branch_id);return <article className="expense-row" key={expense.id}><div className="expense-icon"><Receipt size={17}/></div><div className="expense-main"><b>{expense.category}</b><p>{expense.description || 'Açıklama girilmemiş'}</p><small>{branch?.branch_name || 'Şube'} • {new Date(expense.expense_date+'T12:00:00').toLocaleDateString('tr-TR')} • Kayıt: {new Date(expense.created_at).toLocaleString('tr-TR')}</small>{expense.edited_at && <div className="expense-edited-label">Sonradan düzenlendi • {new Date(expense.edited_at).toLocaleString('tr-TR')}</div>}{expense.is_cancelled && <div className="expense-cancelled-label">İPTAL EDİLDİ • {expense.cancelled_at ? new Date(expense.cancelled_at).toLocaleString('tr-TR') : ''}{expense.cancellation_reason ? ' • '+expense.cancellation_reason : ''}</div>}</div><strong className={expense.is_cancelled?'expense-amount-cancelled':''}>{money(Number(expense.amount))}</strong>{isBranchManager && !expense.is_cancelled && <><button type="button" className="btn mini outline" onClick={()=>startExpenseEdit(expense)}>Düzenle</button><button type="button" className="btn mini danger" disabled={busy} onClick={()=>cancelExpense(expense)}>İptal Et</button></>}{isCentral && expense.is_cancelled && <button type="button" className="btn mini danger" disabled={busy} onClick={()=>permanentlyDeleteExpense(expense)}>Kalıcı Sil</button>}</article>})}</div> : <div className="empty">Henüz gider kaydı bulunmuyor.</div>}
           </section>
         </div>}
         {tab === 'staff' && !isCentral && <section className="surface"><div className="section-head"><div><h2>Parola değişikliği talebi</h2><p>Talebiniz yalnızca TOBU Merkez Yönetici tarafından değerlendirilir.</p></div></div><form className="stack-form" onSubmit={submitPasswordRequest}><label>Açıklama (isteğe bağlı)<textarea rows={3} value={passwordRequest} onChange={e=>setPasswordRequest(e.target.value)} placeholder="Parola yenileme talebinizi yazın"/></label><button className="btn primary" disabled={busy}>Merkez yönetime talep gönder</button></form></section>}
