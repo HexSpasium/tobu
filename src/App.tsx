@@ -1,279 +1,266 @@
-import { useEffect, useMemo, useState } from 'react';
-import {
-  Activity, CalendarDays, Check, ChevronDown, Clock3, Coffee, CreditCard,
-  LayoutDashboard, LogOut, Minus, Plus, Search, Settings2, ShoppingBag,
-  Store, Trash2, Utensils, Wallet, X
-} from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Activity, ArrowDownRight, ArrowUpRight, Building2, CheckCircle2, CircleAlert, Clock3, LogOut, MapPin, Plus, RefreshCw, ShieldCheck, Store, Users, Wifi, WifiOff } from 'lucide-react';
+import { supabase } from './lib/supabase';
 
-type Category = { id: string; name: string };
-type Product = { id: string; categoryId: string; name: string; description: string; price: number; active: boolean };
-type Line = { productId: string; name: string; price: number; qty: number };
-type Order = {
-  id: string; kind: 'table' | 'walkin'; tableId?: string; tableName?: string;
-  items: Line[]; total: number; status: 'open' | 'paid' | 'cancelled';
-  createdAt: string; closedAt?: string;
+type Profile = { user_id: string; display_name: string; username: string | null; role: 'central_admin' | 'branch_manager' | 'cashier'; branch_id: string | null; is_active: boolean };
+type City = { id: number; name: string; plate_code: number };
+type Branch = { id: string; city_id: number; branch_code: string; branch_name: string; is_enabled: boolean; address: string | null; cities?: City };
+type Presence = { branch_id: string; status: string; last_seen_at: string };
+type Staff = { user_id: string; display_name: string; username: string | null; role: string; branch_id: string | null; is_active: boolean };
+type Order = { branch_id: string; total: number; status: string; created_at: string; paid_at: string | null };
+type Expense = { branch_id: string; amount: number; expense_date: string };
+const money = (v: number) => new Intl.NumberFormat('tr-TR', { style: 'currency', currency: 'TRY', maximumFractionDigits: 0 }).format(v || 0);
+const dateKey = () => new Date().toLocaleDateString('en-CA');
+const deviceId = () => {
+  let id = localStorage.getItem('tobu:device');
+  if (!id) { id = crypto.randomUUID(); localStorage.setItem('tobu:device', id); }
+  return id;
 };
-type Table = { id: string; name: string; active: boolean };
-
-const initialCategories: Category[] = [
-  { id: 'wraps', name: 'Dürümler' }, { id: 'portion', name: 'Porsiyon' },
-  { id: 'slice', name: 'Dilim' }, { id: 'drinks', name: 'İçecekler' }
-];
-const initialProducts: Product[] = [
-  { id: 'p1', categoryId: 'wraps', name: 'Çiğköfte Dürüm', description: 'Dolu Dolu Lezzet', price: 120, active: true },
-  { id: 'p2', categoryId: 'wraps', name: 'Mega Dürüm', description: 'Extra Dolu Lezzet', price: 170, active: true },
-  { id: 'p3', categoryId: 'wraps', name: 'Doritoslu Dürüm', description: 'Çıtır Lezzet', price: 140, active: true },
-  { id: 'p4', categoryId: 'wraps', name: 'Doritoslu Mega Dürüm', description: 'Extra Çıtır', price: 190, active: true },
-  { id: 'p5', categoryId: 'portion', name: 'Küçük Porsiyon', description: '300 GR', price: 250, active: true },
-  { id: 'p6', categoryId: 'portion', name: 'Büyük Porsiyon', description: '500 GR', price: 350, active: true },
-  { id: 'p7', categoryId: 'portion', name: 'Aile Boyu Porsiyon', description: '750 GR', price: 530, active: true },
-  { id: 'p8', categoryId: 'portion', name: 'Mega Porsiyon', description: '1000 GR', price: 700, active: true },
-  { id: 'p9', categoryId: 'slice', name: 'Çıtır Dilim', description: 'Dolu Dolu Çıtır Lezzet', price: 190, active: true },
-  { id: 'p10', categoryId: 'slice', name: 'Lokum Dilim', description: 'Dolu Dolu Enfes Lezzet', price: 190, active: true },
-  { id: 'p11', categoryId: 'drinks', name: 'Ayran', description: '', price: 30, active: true },
-  { id: 'p12', categoryId: 'drinks', name: 'Şalgam', description: '', price: 35, active: true },
-  { id: 'p13', categoryId: 'drinks', name: 'Kola', description: '', price: 50, active: true },
-  { id: 'p14', categoryId: 'drinks', name: 'Soda', description: '', price: 25, active: true },
-  { id: 'p15', categoryId: 'drinks', name: 'Meyveli Soda', description: '', price: 30, active: true }
-];
-const initialTables: Table[] = Array.from({ length: 10 }, (_, i) => ({ id: 't' + (i + 1), name: 'Masa ' + (i + 1), active: true }));
-const money = (n: number) => new Intl.NumberFormat('tr-TR', { style: 'currency', currency: 'TRY', maximumFractionDigits: 0 }).format(n);
-const todayKey = () => new Date().toLocaleDateString('en-CA');
-
-function read<T>(key: string, fallback: T): T {
-  try { const value = localStorage.getItem('tobu:' + key); return value ? JSON.parse(value) as T : fallback; }
-  catch { return fallback; }
-}
-function uid() { return crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random(); }
-function dateText(value: string) {
-  return new Date(value).toLocaleString('tr-TR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-}
 
 export default function App() {
-  const [categories, setCategories] = useState(() => read('categories', initialCategories));
-  const [products, setProducts] = useState(() => read('products', initialProducts));
-  const [tables, setTables] = useState(() => read('tables', initialTables));
-  const [orders, setOrders] = useState(() => read<Order[]>('orders', []));
-  const [authed, setAuthed] = useState(() => sessionStorage.getItem('tobu:session') === 'ok');
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const [sessionUser, setSessionUser] = useState<string | null>(null);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const [screen, setScreen] = useState('dashboard');
-  const [selectedTable, setSelectedTable] = useState<string | null>(null);
-  const [walkin, setWalkin] = useState(false);
-  const [cart, setCart] = useState<Line[]>([]);
-  const [category, setCategory] = useState('all');
-  const [search, setSearch] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
-  const [historyDate, setHistoryDate] = useState(todayKey());
-  const [editor, setEditor] = useState<Product | null>(null);
-  const [newCategory, setNewCategory] = useState('');
-  const [tableName, setTableName] = useState('');
+  const [tab, setTab] = useState<'overview' | 'branches' | 'staff'>('overview');
+  const [branches, setBranches] = useState<Branch[]>([]);
+  const [presence, setPresence] = useState<Presence[]>([]);
+  const [staff, setStaff] = useState<Staff[]>([]);
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [cities, setCities] = useState<City[]>([]);
+  const [branchForm, setBranchForm] = useState({ city_id: '', branch_code: '', branch_name: '', address: '' });
+  const [staffForm, setStaffForm] = useState({ username: '', password: '', display_name: '', role: 'cashier', branch_id: '' });
 
-  useEffect(() => { localStorage.setItem('tobu:categories', JSON.stringify(categories)); }, [categories]);
-  useEffect(() => { localStorage.setItem('tobu:products', JSON.stringify(products)); }, [products]);
-  useEffect(() => { localStorage.setItem('tobu:tables', JSON.stringify(tables)); }, [tables]);
-  useEffect(() => { localStorage.setItem('tobu:orders', JSON.stringify(orders)); }, [orders]);
+  const isCentral = profile?.role === 'central_admin';
+  const myBranch = branches.find(b => b.id === profile?.branch_id);
+  const todayOrders = orders.filter(o => o.status === 'paid' && (o.paid_at || o.created_at).slice(0, 10) === dateKey());
+  const todayRevenue = todayOrders.reduce((sum, o) => sum + Number(o.total), 0);
+  const todayExpenses = expenses.filter(e => e.expense_date === dateKey()).reduce((sum, e) => sum + Number(e.amount), 0);
+  const onlineCount = useMemo(() => branches.filter(b => {
+    const p = presence.filter(x => x.branch_id === b.id).sort((a, z) => z.last_seen_at.localeCompare(a.last_seen_at))[0];
+    return b.is_enabled && !!p && p.status === 'online' && Date.now() - new Date(p.last_seen_at).getTime() < 90000;
+  }).length, [branches, presence]);
 
-  const openOrders = orders.filter(o => o.status === 'open');
-  const todayOrders = orders.filter(o => o.status === 'paid' && o.closedAt?.slice(0, 10) === todayKey());
-  const todaySales = todayOrders.reduce((s, o) => s + o.total, 0);
-  const productMap = useMemo(() => new Map(products.map(p => [p.id, p])), [products]);
-  const activeProducts = products.filter(p => p.active && (category === 'all' || p.categoryId === category) && (p.name + ' ' + p.description).toLocaleLowerCase('tr').includes(search.toLocaleLowerCase('tr')));
+  const loadData = useCallback(async (p: Profile) => {
+    const branchFilter = !isCentral && p.branch_id ? p.branch_id : undefined;
+    let branchQuery = supabase.from('branches').select('id,city_id,branch_code,branch_name,is_enabled,address,cities(id,name,plate_code)').order('branch_name');
+    if (branchFilter) branchQuery = branchQuery.eq('id', branchFilter);
+    const [b, c, pr, st, o, ex] = await Promise.all([
+      branchQuery,
+      supabase.from('cities').select('id,name,plate_code').order('plate_code'),
+      supabase.from('branch_presence').select('branch_id,status,last_seen_at').order('last_seen_at', { ascending: false }),
+      supabase.from('staff_profiles').select('user_id,display_name,username,role,branch_id,is_active').order('display_name'),
+      (() => { let q = supabase.from('orders').select('branch_id,total,status,created_at,paid_at').order('created_at', { ascending: false }).limit(500); if (branchFilter) q = q.eq('branch_id', branchFilter); return q; })(),
+      (() => { let q = supabase.from('expenses').select('branch_id,amount,expense_date').order('expense_date', { ascending: false }).limit(500); if (branchFilter) q = q.eq('branch_id', branchFilter); return q; })()
+    ]);
+    const firstError = b.error || c.error || pr.error || st.error || o.error || ex.error;
+    if (firstError) throw firstError;
+    setBranches((b.data || []) as unknown as Branch[]);
+    setCities((c.data || []) as City[]);
+    setPresence((pr.data || []) as Presence[]);
+    setStaff((st.data || []) as Staff[]);
+    setOrders((o.data || []) as Order[]);
+    setExpenses((ex.data || []) as Expense[]);
+  }, [isCentral]);
 
-  function login(e: React.FormEvent) {
-    e.preventDefault();
-    // Temporary local demo credentials; replace with server-side authentication before production.
-    if (username === 'admin' && password === 'tobu1234') {
-      sessionStorage.setItem('tobu:session', 'ok'); setAuthed(true); setNotice('');
-    } else setNotice('Kullanıcı adı veya şifre hatalı.');
+  const refresh = useCallback(async () => {
+    if (!profile) return;
+    try { await loadData(profile); } catch (e) { setError(e instanceof Error ? e.message : 'Veriler alınamadı.'); }
+  }, [profile, loadData]);
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      const { data } = await supabase.auth.getSession();
+      if (!data.session) { if (alive) setLoading(false); return; }
+      const { data: row, error: profileError } = await supabase.from('staff_profiles').select('*').eq('user_id', data.session.user.id).single();
+      if (profileError || !row || !row.is_active) {
+        await supabase.auth.signOut();
+        if (alive) { setError('Bu kullanıcı için aktif TOBU personel yetkisi bulunamadı.'); setLoading(false); }
+        return;
+      }
+      if (row.branch_id) {
+        const { data: branch } = await supabase.from('branches').select('is_enabled').eq('id', row.branch_id).single();
+        if (!branch?.is_enabled) {
+          await supabase.auth.signOut();
+          if (alive) { setError('Bu şube merkez yönetim tarafından devre dışı bırakılmış.'); setLoading(false); }
+          return;
+        }
+      }
+      if (alive) { setProfile(row as Profile); setSessionUser(data.session.user.id); }
+    })().catch(e => { if (alive) setError(e instanceof Error ? e.message : 'Oturum kontrol edilemedi.'); })
+      .finally(() => { if (alive) setLoading(false); });
+    return () => { alive = false; };
+  }, []);
+
+  useEffect(() => { if (profile) refresh(); }, [profile, refresh]);
+
+  useEffect(() => {
+    if (!profile?.branch_id || !sessionUser) return;
+    const branchId = profile.branch_id;
+    const id = deviceId();
+    const heartbeat = async () => {
+      const { error: e } = await supabase.from('branch_presence').upsert({
+        branch_id: branchId, user_id: sessionUser, device_id: id, status: 'online',
+        last_seen_at: new Date().toISOString(), logged_out_at: null
+      }, { onConflict: 'branch_id,user_id,device_id' });
+      if (e) console.warn('TOBU heartbeat:', e.message);
+    };
+    heartbeat();
+    const timer = window.setInterval(heartbeat, 30000);
+    return () => window.clearInterval(timer);
+  }, [profile?.branch_id, sessionUser]);
+
+  async function login(e: React.FormEvent) {
+    e.preventDefault(); setBusy(true); setError('');
+    const value = username.trim().toLowerCase();
+    const email = value.includes('@') ? value : value + '@tobu.local';
+    const { error: e2 } = await supabase.auth.signInWithPassword({ email, password });
+    if (e2) setError('Kullanıcı adı veya şifre hatalı.');
+    else window.location.reload();
+    setBusy(false);
   }
-  function logout() { sessionStorage.removeItem('tobu:session'); setAuthed(false); setUsername(''); setPassword(''); }
-  function addToCart(p: Product) {
-    setCart(old => {
-      const found = old.find(x => x.productId === p.id);
-      return found ? old.map(x => x.productId === p.id ? { ...x, qty: x.qty + 1 } : x)
-        : [...old, { productId: p.id, name: p.name, price: p.price, qty: 1 }];
-    });
-  }
-  function updateQty(id: string, delta: number) {
-    setCart(old => old.map(x => x.productId === id ? { ...x, qty: x.qty + delta } : x).filter(x => x.qty > 0));
-  }
-  function beginTable(table: Table) {
-    setWalkin(false); setSelectedTable(table.id);
-    const current = openOrders.find(o => o.tableId === table.id);
-    setCart(current ? current.items : []);
-    setScreen('pos');
-  }
-  function beginWalkin() { setWalkin(true); setSelectedTable(null); setCart([]); setScreen('pos'); }
-  function saveOrder() {
-    if (!cart.length) return;
-    const total = cart.reduce((s, x) => s + x.price * x.qty, 0);
-    if (walkin) {
-      const order: Order = { id: uid(), kind: 'walkin', tableName: 'Ayaküstü', items: cart, total, status: 'paid', createdAt: new Date().toISOString(), closedAt: new Date().toISOString() };
-      setOrders(old => [order, ...old]); setNotice('Ayaküstü satış kaydedildi.'); setCart([]); setScreen('walkin');
-    } else if (selectedTable) {
-      const existing = openOrders.find(o => o.tableId === selectedTable);
-      const merged = existing ? [...existing.items, ...cart].reduce<Line[]>((acc, line) => {
-        const f = acc.find(x => x.productId === line.productId);
-        if (f) f.qty += line.qty; else acc.push({ ...line });
-        return acc;
-      }, []) : cart;
-      const order: Order = {
-        id: existing?.id || uid(), kind: 'table', tableId: selectedTable,
-        tableName: tables.find(t => t.id === selectedTable)?.name || 'Masa',
-        items: merged, total: merged.reduce((s, x) => s + x.price * x.qty, 0),
-        status: 'open', createdAt: existing?.createdAt || new Date().toISOString()
-      };
-      setOrders(old => existing ? old.map(o => o.id === existing.id ? order : o) : [order, ...old]);
-      setCart([]); setNotice('Sipariş masaya kaydedildi.'); setScreen('tables');
+
+  async function logout() {
+    if (profile?.branch_id && sessionUser) {
+      await supabase.from('branch_presence').update({ status: 'offline', logged_out_at: new Date().toISOString(), last_seen_at: new Date().toISOString() })
+        .eq('branch_id', profile.branch_id).eq('user_id', sessionUser).eq('device_id', deviceId());
     }
-  }
-  function closeOrder(order: Order, status: 'paid' | 'cancelled') {
-    setOrders(old => old.map(o => o.id === order.id ? { ...o, status, closedAt: new Date().toISOString() } : o));
-    setNotice(status === 'paid' ? 'Ödeme alındı, satış geçmişine kaydedildi.' : 'Sipariş iptal edildi.');
-  }
-  function addTable() {
-    const name = tableName.trim() || 'Masa ' + (tables.length + 1);
-    setTables(old => [...old, { id: uid(), name, active: true }]); setTableName('');
-  }
-  function removeTable(id: string) {
-    if (openOrders.some(o => o.tableId === id)) { setNotice('Siparişi açık olan masa silinemez. Önce hesabı kapatın.'); return; }
-    setTables(old => old.filter(t => t.id !== id));
-  }
-  function saveProduct() {
-    if (!editor || !editor.name.trim() || !categories.some(c => c.id === editor.categoryId)) return;
-    setProducts(old => old.some(p => p.id === editor.id) ? old.map(p => p.id === editor.id ? editor : p) : [...old, editor]);
-    setEditor(null);
-  }
-  function deleteProduct(id: string) { setProducts(old => old.map(p => p.id === id ? { ...p, active: false } : p)); }
-  function addCategory() {
-    if (!newCategory.trim()) return;
-    setCategories(old => [...old, { id: uid(), name: newCategory.trim() }]); setNewCategory('');
+    await supabase.auth.signOut(); setProfile(null); setSessionUser(null);
   }
 
-  if (!authed) return <div className="login-page">
-    <div className="login-brand"><div className="brand-mark">T</div><span>TOBU</span><small>ÇİĞ KÖFTE • İŞLETME YÖNETİMİ</small></div>
-    <form className="login-card" onSubmit={login}>
-      <div className="eyebrow">YÖNETİCİ PANELİ</div><h1>Hoş geldiniz</h1><p>Devam etmek için hesabınıza giriş yapın.</p>
-      <label>Kullanıcı adı<input value={username} onChange={e => setUsername(e.target.value)} placeholder="Kullanıcı adınız" autoComplete="username" /></label>
-      <label>Şifre<input value={password} onChange={e => setPassword(e.target.value)} placeholder="••••••••" type="password" autoComplete="current-password" /></label>
-      {notice && <div className="error">{notice}</div>}
-      <button className="primary full" type="submit">Giriş Yap <span>→</span></button>
-      <div className="login-hint">İlk kurulum demo girişi: <b>admin</b> / <b>tobu1234</b></div>
-    </form>
-    <div className="login-foot">TOBU POS <span>•</span> Sipariş ve satış yönetimi</div>
-  </div>;
+  async function createBranch(e: React.FormEvent) {
+    e.preventDefault(); setBusy(true); setError(''); setNotice('');
+    const { error: e2 } = await supabase.from('branches').insert({
+      city_id: Number(branchForm.city_id), branch_code: branchForm.branch_code.trim().toUpperCase(),
+      branch_name: branchForm.branch_name.trim(), address: branchForm.address.trim() || null
+    });
+    if (e2) setError(e2.message);
+    else { setNotice('Şube oluşturuldu.'); setBranchForm({ city_id: '', branch_code: '', branch_name: '', address: '' }); await refresh(); }
+    setBusy(false);
+  }
 
-  const nav = [
-    { id: 'dashboard', label: 'Genel Bakış', icon: LayoutDashboard },
-    { id: 'tables', label: 'Masalarım', icon: Utensils },
-    { id: 'walkin', label: 'Ayaküstü Satış', icon: ShoppingBag },
-    { id: 'products', label: 'Ürünlerim', icon: Store },
-    { id: 'history', label: 'Satış Geçmişi', icon: CalendarDays }
-  ];
-  const displayedHistory = orders.filter(o => o.status !== 'open' && (o.closedAt || o.createdAt).slice(0, 10) === historyDate);
-  const historyTotal = displayedHistory.filter(o => o.status === 'paid').reduce((s, o) => s + o.total, 0);
+  async function createStaff(e: React.FormEvent) {
+    e.preventDefault(); setBusy(true); setError(''); setNotice('');
+    const { data, error: e2 } = await supabase.functions.invoke('create-branch-user', {
+      body: { username: staffForm.username.trim().toLowerCase(), password: staffForm.password, display_name: staffForm.display_name.trim(), role: staffForm.role, branch_id: staffForm.branch_id }
+    });
+    if (e2 || data?.error) setError(e2?.message || data.error);
+    else { setNotice('Şube kullanıcı hesabı oluşturuldu.'); setStaffForm({ username: '', password: '', display_name: '', role: 'cashier', branch_id: '' }); await refresh(); }
+    setBusy(false);
+  }
+
+  async function toggleBranch(branch: Branch) {
+    const { error: e } = await supabase.from('branches').update({ is_enabled: !branch.is_enabled }).eq('id', branch.id);
+    if (e) setError(e.message); else { setNotice(branch.is_enabled ? 'Şube devre dışı bırakıldı.' : 'Şube yeniden etkinleştirildi.'); await refresh(); }
+  }
+
+  if (loading) return <div className="loading-screen"><div className="tobu-logo">T</div><b>TOBU</b><span>Merkezi işletme sistemi yükleniyor…</span></div>;
+
+  if (!profile) return <main className="login-screen">
+    <div className="login-panel">
+      <div className="brand-lockup"><div className="tobu-logo">T</div><div><b>TOBU</b><small>MERKEZİ ŞUBE YÖNETİMİ</small></div></div>
+      <div className="login-kicker">GÜVENLİ PERSONEL GİRİŞİ</div><h1>Hoş geldiniz.</h1><p>Şubenizin veya merkez yönetim hesabınızın bilgileriyle giriş yapın.</p>
+      <form onSubmit={login}>
+        <label>Kullanıcı adı<input value={username} onChange={e => setUsername(e.target.value)} autoComplete="username" placeholder="Kullanıcı adınız" required /></label>
+        <label>Şifre<input type="password" value={password} onChange={e => setPassword(e.target.value)} autoComplete="current-password" placeholder="Şifreniz" required /></label>
+        {error && <div className="alert error"><CircleAlert size={16}/>{error}</div>}
+        <button className="btn primary full" disabled={busy}>{busy ? 'Giriş yapılıyor…' : 'Giriş Yap'} <span>→</span></button>
+      </form>
+      <div className="login-security"><ShieldCheck size={15}/> Şifreli bağlantı ve rol tabanlı erişim</div>
+    </div>
+    <footer>TOBU • TÜRKİYE GENELİ FRANCHISE YÖNETİMİ</footer>
+  </main>;
+
+  const statusFor = (branch: Branch) => {
+    if (!branch.is_enabled) return { label: 'Devre dışı', kind: 'disabled', icon: <CircleAlert size={14}/> };
+    const p = presence.filter(x => x.branch_id === branch.id).sort((a, b) => b.last_seen_at.localeCompare(a.last_seen_at))[0];
+    if (!p || p.status === 'offline') return { label: 'Çevrimdışı', kind: 'offline', icon: <WifiOff size={14}/> };
+    if (p.status === 'connection_lost' || Date.now() - new Date(p.last_seen_at).getTime() > 90000) return { label: 'Bağlantı koptu', kind: 'lost', icon: <CircleAlert size={14}/> };
+    return { label: 'Çevrimiçi', kind: 'online', icon: <Wifi size={14}/> };
+  };
 
   return <div className="app-shell">
     <aside className="sidebar">
-      <div className="side-brand"><div className="brand-mark small">T</div><div><b>TOBU</b><small>ÇİĞ KÖFTE</small></div></div>
-      <div className="side-label">MENÜ</div>
-      <nav>{nav.map(item => <button key={item.id} className={'nav-item ' + (screen === item.id || (screen === 'pos' && item.id === (walkin ? 'walkin' : 'tables')) ? 'active' : '')} onClick={() => { setScreen(item.id); setNotice(''); }}>
-        <item.icon size={18} strokeWidth={1.8}/><span>{item.label}</span>{item.id === 'tables' && openOrders.length > 0 && <i>{openOrders.length}</i>}
-      </button>)}</nav>
-      <div className="side-bottom"><div className="store-status"><span className="pulse"></span><div><b>İşletme açık</b><small>Yerel çalışma modu</small></div></div>
-        <button className="nav-item" onClick={logout}><LogOut size={18}/><span>Oturumu Kapat</span></button>
-        <div className="version">TOBU POS <span>v1.0.0</span></div>
+      <div className="brand-lockup side"><div className="tobu-logo">T</div><div><b>TOBU</b><small>FRANCHISE PLATFORM</small></div></div>
+      <div className="nav-caption">YÖNETİM</div>
+      <button className={'nav-link ' + (tab === 'overview' ? 'active' : '')} onClick={() => setTab('overview')}><Activity size={18}/> Genel Bakış</button>
+      {isCentral && <button className={'nav-link ' + (tab === 'branches' ? 'active' : '')} onClick={() => setTab('branches')}><Building2 size={18}/> Şubeler</button>}
+      {isCentral && <button className={'nav-link ' + (tab === 'staff' ? 'active' : '')} onClick={() => setTab('staff')}><Users size={18}/> Kullanıcılar</button>}
+      <div className="sidebar-bottom">
+        <div className="signed-user"><div className="user-avatar">{profile.display_name.slice(0,1).toLocaleUpperCase('tr')}</div><div><b>{profile.display_name}</b><small>{isCentral ? 'Merkez yönetim' : myBranch?.branch_name || 'Şube personeli'}</small></div></div>
+        <button className="nav-link logout" onClick={logout}><LogOut size={17}/> Oturumu Kapat</button>
+        <small className="build-label">TOBU PLATFORM • v2.0</small>
       </div>
     </aside>
     <main className="main-area">
-      <header className="topbar"><div><div className="crumb">TOBU / <b>{nav.find(n => n.id === screen)?.label || (walkin ? 'Ayaküstü Satış' : 'Sipariş Oluştur')}</b></div><div className="top-date"><Clock3 size={14}/> {new Date().toLocaleDateString('tr-TR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</div></div>
-        <div className="top-user"><div className="avatar">A</div><div><b>Yönetici</b><small>Admin hesabı</small></div><ChevronDown size={15}/></div>
-      </header>
+      <header className="topbar"><div><span className="crumb">TOBU / </span><b>{tab === 'overview' ? 'Genel Bakış' : tab === 'branches' ? 'Şube Yönetimi' : 'Kullanıcı Yönetimi'}</b><small>{new Date().toLocaleDateString('tr-TR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</small></div><div className="topbar-actions"><span className="secure"><ShieldCheck size={15}/> Güvenli oturum</span><button className="icon-action" onClick={refresh} title="Yenile"><RefreshCw size={17}/></button></div></header>
       <div className="content">
-        {notice && <div className="notice"><Check size={16}/>{notice}<button onClick={() => setNotice('')}><X size={15}/></button></div>}
-        {screen === 'dashboard' && <section>
-          <div className="page-heading"><div><div className="eyebrow">İŞLETME ÖZETİ</div><h1>Genel Bakış</h1><p>TOBU işletmenizin bugünkü durumuna göz atın.</p></div><button className="primary" onClick={beginWalkin}><Plus size={17}/> Yeni Satış</button></div>
-          <div className="stat-grid">
-            <div className="stat-card"><div className="stat-icon gold"><Wallet/></div><span>Bugünkü Ciro</span><strong>{money(todaySales)}</strong><small>Ödemesi alınan satışlar</small></div>
-            <div className="stat-card"><div className="stat-icon green"><Utensils/></div><span>Dolu Masalar</span><strong>{new Set(openOrders.map(o => o.tableId)).size}</strong><small>{tables.length} masa içinden</small></div>
-            <div className="stat-card"><div className="stat-icon blue"><CreditCard/></div><span>Bugünkü İşlem</span><strong>{todayOrders.length}</strong><small>Tamamlanan satış</small></div>
-            <div className="stat-card"><div className="stat-icon orange"><Activity/></div><span>Açık Hesap</span><strong>{openOrders.length}</strong><small>Ödeme bekleyen masa</small></div>
+        {error && <div className="alert error"><CircleAlert size={16}/>{error}<button onClick={() => setError('')}>×</button></div>}
+        {notice && <div className="alert success"><CheckCircle2 size={16}/>{notice}<button onClick={() => setNotice('')}>×</button></div>}
+        {tab === 'overview' && <>
+          <div className="page-heading"><div><span className="eyebrow">{isCentral ? 'MERKEZ YÖNETİMİ' : 'ŞUBE OPERASYONU'}</span><h1>{isCentral ? 'Türkiye genelinde kontrol sizde.' : (myBranch?.branch_name || 'Şube paneli')}</h1><p>{isCentral ? 'Tüm şubelerin anlık durumunu, cirosunu ve operasyonlarını tek merkezden yönetin.' : 'Şubenizin günlük operasyon ve performans özeti.'}</p></div><div className="live-pill"><i/> CANLI SİSTEM</div></div>
+          <div className="metric-grid">
+            <Metric icon={<Store/>} label={isCentral ? 'Toplam Şube' : 'Şube Durumu'} value={isCentral ? String(branches.length) : (myBranch?.is_enabled ? 'Aktif' : 'Pasif')} note={isCentral ? '81 ilde şube yönetimi' : myBranch?.branch_code || 'Şube kodu'} />
+            <Metric icon={<Wifi/>} label={isCentral ? 'Çevrimiçi Şube' : 'Bugünkü İşlem'} value={isCentral ? String(onlineCount) : String(todayOrders.length)} note={isCentral ? 'Son 90 saniyede sinyal gönderen' : 'Tamamlanan satış'} />
+            <Metric icon={<ArrowUpRight/>} label="Bugünkü Ciro" value={money(todayRevenue)} note="Ödemesi alınmış siparişler" />
+            <Metric icon={<ArrowDownRight/>} label="Bugünkü Gider" value={money(todayExpenses)} note="Kaydedilen işletme giderleri" />
           </div>
-          <div className="dashboard-grid">
-            <div className="panel"><div className="panel-head"><div><h2>Masaların Durumu</h2><p>Aktif siparişlerinize hızlı erişin.</p></div><button className="text-btn" onClick={() => setScreen('tables')}>Tüm masalar →</button></div>
-              <div className="mini-tables">{tables.slice(0, 8).map(t => { const o = openOrders.find(x => x.tableId === t.id); return <button className={'mini-table ' + (o ? 'occupied' : '')} key={t.id} onClick={() => beginTable(t)}><Utensils size={18}/><b>{t.name}</b><small>{o ? money(o.total) : 'Boş masa'}</small></button>; })}</div>
+          {isCentral ? <section className="surface">
+            <div className="section-head"><div><h2>Şube ağı</h2><p>Şubelerin son bağlantı durumu ve günlük performansı.</p></div><button className="btn outline" onClick={() => setTab('branches')}>Şubeleri Yönet →</button></div>
+            <div className="branch-list">
+              {branches.slice(0, 12).map(branch => {
+                const s = statusFor(branch);
+                const revenue = todayOrders.filter(o => o.branch_id === branch.id).reduce((sum, o) => sum + Number(o.total), 0);
+                return <div className="branch-row" key={branch.id}><div className="branch-symbol"><Store size={18}/></div><div className="branch-main"><b>{branch.branch_name}</b><small>{branch.cities?.name || 'İl bilgisi'} • {branch.branch_code}</small></div><span className={'status '+s.kind}>{s.icon}{s.label}</span><strong className="branch-revenue">{money(revenue)}</strong></div>;
+              })}
+              {!branches.length && <div className="empty">Henüz şube eklenmemiş. Şubeler sekmesinden ilk şubeyi oluşturun.</div>}
             </div>
-            <div className="panel"><div className="panel-head"><div><h2>Son İşlemler</h2><p>Son kaydedilen satışlar.</p></div></div>
-              <div className="activity-list">{orders.filter(o => o.status !== 'open').slice(0, 5).map(o => <div className="activity-row" key={o.id}><div className="activity-dot"><ShoppingBag size={15}/></div><div className="activity-info"><b>{o.tableName || 'Satış'}</b><small>{dateText(o.closedAt || o.createdAt)}</small></div><strong>{money(o.total)}</strong></div>)}
-                {!orders.some(o => o.status !== 'open') && <div className="empty-state compact">Henüz tamamlanmış işlem yok.</div>}</div>
+          </section> : <section className="surface branch-welcome"><div className="welcome-icon"><Store size={28}/></div><div><h2>Şube bağlantısı aktif</h2><p>Merkez yönetiminin belirlediği şube hesabıyla giriş yaptınız. Verileriniz yalnızca bu şubeye özeldir.</p></div><div className="connection"><span/><b>Bağlantı izleniyor</b><small>30 saniyede bir güvenli sinyal</small></div></section>}
+        </>}
+        {tab === 'branches' && isCentral && <div className="two-col">
+          <section className="surface"><div className="section-head"><div><h2>Yeni şube oluştur</h2><p>Türkiye'nin 81 ilinden birinde yeni franchise noktası açın.</p></div></div>
+            <form className="stack-form" onSubmit={createBranch}>
+              <label>İl<select required value={branchForm.city_id} onChange={e => setBranchForm({ ...branchForm, city_id: e.target.value })}><option value="">İl seçin</option>{cities.map(c => <option key={c.id} value={c.id}>{String(c.plate_code).padStart(2,'0')} • {c.name}</option>)}</select></label>
+              <label>Şube kodu<input required value={branchForm.branch_code} onChange={e => setBranchForm({ ...branchForm, branch_code: e.target.value })} placeholder="Örn. MRS-001"/></label>
+              <label>Şube adı<input required value={branchForm.branch_name} onChange={e => setBranchForm({ ...branchForm, branch_name: e.target.value })} placeholder="Örn. Mersin Marina"/></label>
+              <label>Adres <input value={branchForm.address} onChange={e => setBranchForm({ ...branchForm, address: e.target.value })} placeholder="Şube adresi (isteğe bağlı)"/></label>
+              <button className="btn primary" disabled={busy}><Plus size={17}/> Şubeyi Kaydet</button>
+            </form>
+          </section>
+          <section className="surface"><div className="section-head"><div><h2>Kayıtlı şubeler</h2><p>{branches.length} şube kayıtlı.</p></div></div>
+            <div className="branch-list">
+              {branches.map(branch => { const s = statusFor(branch); return <div className="branch-row branch-row-wrap" key={branch.id}><div className="branch-symbol"><MapPin size={18}/></div><div className="branch-main"><b>{branch.branch_name}</b><small>{branch.cities?.name} • {branch.branch_code}</small><span className={'status '+s.kind}>{s.icon}{s.label}</span></div><button className={'btn mini ' + (branch.is_enabled ? 'danger' : 'outline')} onClick={() => toggleBranch(branch)}>{branch.is_enabled ? 'Devre dışı bırak' : 'Etkinleştir'}</button></div>; })}
+              {!branches.length && <div className="empty">Şube kaydı bulunmuyor.</div>}
             </div>
-          </div>
-          <div className="panel quick-panel"><div><h2>Hızlı İşlemler</h2><p>Günlük operasyonlarınıza buradan başlayın.</p></div><div className="quick-actions"><button onClick={() => setScreen('tables')}><Utensils/> Masa siparişi</button><button onClick={beginWalkin}><ShoppingBag/> Ayaküstü satış</button><button onClick={() => setScreen('products')}><Store/> Ürün düzenle</button><button onClick={() => setScreen('history')}><CalendarDays/> Günlük rapor</button></div></div>
-        </section>}
-
-        {screen === 'tables' && <section>
-          <div className="page-heading"><div><div className="eyebrow">SİPARİŞ YÖNETİMİ</div><h1>Masalarım</h1><p>Masaları seçerek sipariş açın, hesabı görüntüleyin veya ödeme alın.</p></div><div className="heading-actions"><input className="table-name-input" value={tableName} onChange={e => setTableName(e.target.value)} placeholder="Yeni masa adı"/><button className="primary" onClick={addTable}><Plus size={17}/> Masa Ekle</button></div></div>
-          <div className="legend"><span><i className="free-dot"></i> Boş masa</span><span><i className="busy-dot"></i> Sipariş açık</span><span>{tables.length} masa tanımlı</span></div>
-          <div className="table-grid">{tables.map(t => { const o = openOrders.find(x => x.tableId === t.id); return <div className={'table-card ' + (o ? 'is-busy' : '')} key={t.id}>
-            <div className="table-card-top"><span className={'table-status ' + (o ? 'busy' : 'free')}>{o ? 'SİPARİŞ AÇIK' : 'BOŞ'}</span><button className="icon-btn" title="Masayı sil" onClick={() => removeTable(t.id)}><Trash2 size={16}/></button></div>
-            <div className="table-illustration"><Utensils size={29}/></div><h3>{t.name}</h3>
-            {o ? <><b className="table-amount">{money(o.total)}</b><small>{o.items.reduce((s, x) => s + x.qty, 0)} ürün • {dateText(o.createdAt)}</small><button className="outline-btn" onClick={() => beginTable(t)}>Siparişi Aç</button><div className="close-actions"><button onClick={() => closeOrder(o, 'paid')}><Check size={14}/> Ödendi</button><button onClick={() => closeOrder(o, 'cancelled')}><X size={14}/> İptal</button></div></>
-            : <><p className="muted">Henüz sipariş yok</p><button className="primary full" onClick={() => beginTable(t)}>Sipariş Oluştur <span>→</span></button></>}
-          </div>; })}</div>
-        </section>}
-
-        {screen === 'pos' && <section className="pos-section">
-          <div className="page-heading"><div><div className="eyebrow">YENİ SİPARİŞ</div><h1>{walkin ? 'Ayaküstü Satış' : (tables.find(t => t.id === selectedTable)?.name || 'Masa Siparişi')}</h1><p>Ürün seçin ve siparişi kaydedin.</p></div><button className="outline-btn" onClick={() => { setCart([]); setScreen(walkin ? 'walkin' : 'tables'); }}>← Geri</button></div>
-          <div className="pos-layout"><div className="product-browser">
-            <div className="product-toolbar"><div className="category-tabs"><button className={category === 'all' ? 'selected' : ''} onClick={() => setCategory('all')}>Tümü</button>{categories.map(c => <button className={category === c.id ? 'selected' : ''} key={c.id} onClick={() => setCategory(c.id)}>{c.name}</button>)}</div><div className="search-box"><Search size={16}/><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Ürün ara..."/></div></div>
-            <div className="product-grid">{activeProducts.map(p => <button className="product-card" key={p.id} onClick={() => addToCart(p)}><div className="product-symbol">{p.categoryId === 'drinks' ? <Coffee/> : <Utensils/>}</div><b>{p.name}</b><small>{p.description || 'TOBU lezzeti'}</small><strong>{money(p.price)}</strong><span className="add-product"><Plus size={15}/></span></button>)}
-              {!activeProducts.length && <div className="empty-state">Bu kategoride ürün bulunamadı.</div>}</div>
-          </div><aside className="cart-panel"><div className="cart-title"><div><h2>Sipariş Özeti</h2><p>{cart.reduce((s, x) => s + x.qty, 0)} ürün</p></div><ShoppingBag/></div>
-            <div className="cart-lines">{cart.map(line => <div className="cart-line" key={line.productId}><div className="line-info"><b>{line.name}</b><small>{money(line.price)} / adet</small></div><div className="qty-control"><button onClick={() => updateQty(line.productId, -1)}><Minus size={13}/></button><b>{line.qty}</b><button onClick={() => updateQty(line.productId, 1)}><Plus size={13}/></button></div><strong>{money(line.price * line.qty)}</strong></div>)}
-              {!cart.length && <div className="empty-state"><ShoppingBag size={25}/><b>Sepetiniz boş</b><span>Ürünlere tıklayarak sipariş ekleyin.</span></div>}</div>
-            <div className="cart-total"><span>Genel toplam</span><strong>{money(cart.reduce((s, x) => s + x.price * x.qty, 0))}</strong></div>
-            <button className="primary full checkout" disabled={!cart.length} onClick={saveOrder}>{walkin ? 'Satışı Tamamla' : 'Siparişi Masaya Kaydet'} <span>→</span></button>
-            {walkin && <small className="cart-note">Ayaküstü satış tamamlandığında doğrudan ödenmiş olarak kaydedilir.</small>}
-          </aside></div>
-        </section>}
-
-        {screen === 'walkin' && <section>
-          <div className="page-heading"><div><div className="eyebrow">HIZLI SATIŞ</div><h1>Ayaküstü Satış</h1><p>Masa kullanmadan yapılan satışları buradan kaydedin.</p></div><button className="primary" onClick={beginWalkin}><Plus size={17}/> Yeni Ayaküstü Satış</button></div>
-          <div className="stat-grid single-stat"><div className="stat-card"><div className="stat-icon gold"><Wallet/></div><span>Bugünkü ayaküstü cirosu</span><strong>{money(todayOrders.filter(o => o.kind === 'walkin').reduce((s, o) => s + o.total, 0))}</strong></div><div className="stat-card"><div className="stat-icon blue"><ShoppingBag/></div><span>Bugünkü ayaküstü işlem</span><strong>{todayOrders.filter(o => o.kind === 'walkin').length}</strong></div></div>
-          <div className="panel"><div className="panel-head"><div><h2>Son ayaküstü satışlar</h2><p>Tamamlanan hızlı satışlar.</p></div></div><OrderTable orders={orders.filter(o => o.kind === 'walkin').slice(0, 10)} /></div>
-        </section>}
-
-        {screen === 'products' && <section>
-          <div className="page-heading"><div><div className="eyebrow">MENÜ YÖNETİMİ</div><h1>Ürünlerim</h1><p>Kategorilerinizi ve ürün bilgilerinizi düzenleyin.</p></div><button className="primary" onClick={() => setEditor({ id: uid(), categoryId: categories[0]?.id || '', name: '', description: '', price: 0, active: true })}><Plus size={17}/> Ürün Ekle</button></div>
-          <div className="panel category-manager"><div><h2>Kategoriler</h2><p>Ürünlerinizi gruplandırın.</p></div><div className="category-add"><input value={newCategory} onChange={e => setNewCategory(e.target.value)} placeholder="Yeni kategori adı"/><button className="outline-btn" onClick={addCategory}><Plus size={15}/> Kategori Ekle</button></div><div className="category-chips">{categories.map(c => <span key={c.id}>{c.name}<small>{products.filter(p => p.categoryId === c.id && p.active).length} ürün</small></span>)}</div></div>
-          {categories.map(c => <div className="panel product-manage-panel" key={c.id}><div className="panel-head"><div><h2>{c.name}</h2><p>{products.filter(p => p.categoryId === c.id && p.active).length} aktif ürün</p></div></div>
-            <div className="manage-list">{products.filter(p => p.categoryId === c.id && p.active).map(p => <div className="manage-row" key={p.id}><div className="manage-product-icon">{c.id === 'drinks' ? <Coffee/> : <Utensils/>}</div><div className="manage-product-info"><b>{p.name}</b><small>{p.description || 'Açıklama eklenmemiş'}</small></div><strong>{money(p.price)}</strong><button className="outline-btn small-btn" onClick={() => setEditor({ ...p })}><Settings2 size={14}/> Düzenle</button><button className="icon-btn danger" onClick={() => deleteProduct(p.id)} title="Ürünü pasife al"><Trash2 size={16}/></button></div>)}
-              {!products.some(p => p.categoryId === c.id && p.active) && <div className="empty-state compact">Bu kategoride aktif ürün yok.</div>}</div>
-          </div>)}
-          {editor && <div className="modal-backdrop" onClick={() => setEditor(null)}><div className="modal" onClick={e => e.stopPropagation()}><div className="modal-head"><div><div className="eyebrow">ÜRÜN BİLGİSİ</div><h2>{products.some(p => p.id === editor.id) ? 'Ürünü Düzenle' : 'Yeni Ürün'}</h2></div><button className="icon-btn" onClick={() => setEditor(null)}><X/></button></div>
-            <label>Ürün adı<input value={editor.name} onChange={e => setEditor({ ...editor, name: e.target.value })} placeholder="Ürün adı"/></label>
-            <label>Kategori<select value={editor.categoryId} onChange={e => setEditor({ ...editor, categoryId: e.target.value })}>{categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
-            <label>Açıklama<input value={editor.description} onChange={e => setEditor({ ...editor, description: e.target.value })} placeholder="Ürün açıklaması"/></label>
-            <label>Fiyat (TL)<input type="number" min="0" step="1" value={editor.price} onChange={e => setEditor({ ...editor, price: Number(e.target.value) })}/></label>
-            <div className="modal-actions"><button className="outline-btn" onClick={() => setEditor(null)}>Vazgeç</button><button className="primary" onClick={saveProduct}>Kaydet</button></div>
-          </div></div>}
-        </section>}
-
-        {screen === 'history' && <section>
-          <div className="page-heading"><div><div className="eyebrow">KASA VE RAPORLAMA</div><h1>Satış Geçmişi</h1><p>Ödenen ve iptal edilen tüm işlemleri tarihe göre inceleyin.</p></div><div className="date-filter"><CalendarDays size={17}/><input type="date" value={historyDate} onChange={e => setHistoryDate(e.target.value)}/></div></div>
-          <div className="stat-grid single-stat"><div className="stat-card"><div className="stat-icon gold"><Wallet/></div><span>Seçili günün cirosu</span><strong>{money(historyTotal)}</strong></div><div className="stat-card"><div className="stat-icon green"><Check/></div><span>Ödenen işlem</span><strong>{displayedHistory.filter(o => o.status === 'paid').length}</strong></div><div className="stat-card"><div className="stat-icon orange"><X/></div><span>İptal edilen işlem</span><strong>{displayedHistory.filter(o => o.status === 'cancelled').length}</strong></div></div>
-          <div className="panel"><div className="panel-head"><div><h2>{new Date(historyDate + 'T12:00:00').toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' })} işlemleri</h2><p>Masalara ve ayaküstü satışlara göre kayıtlar.</p></div></div><OrderTable orders={displayedHistory}/></div>
-          <div className="panel"><div className="panel-head"><div><h2>Masa bazında kazanç</h2><p>Seçili tarihte her masanın oluşturduğu ciro.</p></div></div>
-            <div className="table-revenue">{tables.map(t => { const total = displayedHistory.filter(o => o.status === 'paid' && o.tableId === t.id).reduce((s, o) => s + o.total, 0); return <div key={t.id}><span>{t.name}</span><b>{money(total)}</b></div>; })}{(() => { const total = displayedHistory.filter(o => o.status === 'paid' && o.kind === 'walkin').reduce((s, o) => s + o.total, 0); return <div><span>Ayaküstü</span><b>{money(total)}</b></div>; })()}</div>
-          </div>
-        </section>}
+          </section>
+        </div>}
+        {tab === 'staff' && isCentral && <div className="two-col">
+          <section className="surface"><div className="section-head"><div><h2>Şube kullanıcısı oluştur</h2><p>Her çalışan için ayrı kullanıcı adı ve parola tanımlayın.</p></div></div>
+            <form className="stack-form" onSubmit={createStaff}>
+              <label>Ad soyad<input required value={staffForm.display_name} onChange={e => setStaffForm({ ...staffForm, display_name: e.target.value })} placeholder="Personel adı"/></label>
+              <label>Kullanıcı adı<input required minLength={3} value={staffForm.username} onChange={e => setStaffForm({ ...staffForm, username: e.target.value.replace(/\s/g,'') })} placeholder="ornek.kullanici"/></label>
+              <label>İlk parola<input required minLength={8} type="password" value={staffForm.password} onChange={e => setStaffForm({ ...staffForm, password: e.target.value })} placeholder="En az 8 karakter"/></label>
+              <label>Şube<select required value={staffForm.branch_id} onChange={e => setStaffForm({ ...staffForm, branch_id: e.target.value })}><option value="">Şube seçin</option>{branches.map(b => <option key={b.id} value={b.id}>{b.branch_name} ({b.branch_code})</option>)}</select></label>
+              <label>Yetki<select value={staffForm.role} onChange={e => setStaffForm({ ...staffForm, role: e.target.value })}><option value="cashier">Kasiyer</option><option value="branch_manager">Şube yöneticisi</option></select></label>
+              <button className="btn primary" disabled={busy || !branches.length}><Users size={17}/> Kullanıcıyı Oluştur</button>
+            </form>
+            <p className="form-note">Parolalar güvenli kimlik doğrulama sisteminde saklanır; veritabanında açık metin olarak tutulmaz.</p>
+          </section>
+          <section className="surface"><div className="section-head"><div><h2>Kullanıcı listesi</h2><p>{staff.length} personel hesabı.</p></div></div>
+            <div className="branch-list">{staff.map(s => <div className="branch-row" key={s.user_id}><div className="user-avatar small">{s.display_name.slice(0,1).toLocaleUpperCase('tr')}</div><div className="branch-main"><b>{s.display_name}</b><small>{s.username || 'Kullanıcı adı tanımlı değil'} • {branches.find(b => b.id === s.branch_id)?.branch_name || 'Merkez'}</small></div><span className={'status '+(s.is_active?'online':'disabled')}>{s.is_active?'Aktif':'Pasif'}</span></div>)}{!staff.length && <div className="empty">Henüz personel hesabı yok.</div>}</div>
+          </section>
+        </div>}
       </div>
     </main>
   </div>;
 }
 
-function OrderTable({ orders }: { orders: Order[] }) {
-  if (!orders.length) return <div className="empty-state">Seçilen tarihte kayıt bulunmuyor.</div>;
-  return <div className="table-wrap"><table><thead><tr><th>İŞLEM</th><th>ÜRÜNLER</th><th>TARİH</th><th>TUTAR</th><th>DURUM</th></tr></thead><tbody>{orders.map(o => <tr key={o.id}><td><b>{o.tableName || 'Ayaküstü'}</b><small className="cell-sub">{o.kind === 'table' ? 'Masa siparişi' : 'Hızlı satış'}</small></td><td>{o.items.map(i => i.name + ' × ' + i.qty).join(', ')}</td><td>{dateText(o.closedAt || o.createdAt)}</td><td><b>{money(o.total)}</b></td><td><span className={'status-pill ' + o.status}>{o.status === 'paid' ? 'Ödendi' : o.status === 'cancelled' ? 'İptal' : 'Açık'}</span></td></tr>)}</tbody></table></div>;
+function Metric({ icon, label, value, note }: { icon: React.ReactNode; label: string; value: string; note: string }) {
+  return <article className="metric-card"><div className="metric-top"><span>{label}</span><i>{icon}</i></div><strong>{value}</strong><small>{note}</small></article>;
 }
